@@ -1,0 +1,184 @@
+/* ── Google Fonts — must be before @tailwind ─────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Base layer ───────────────────────────────────────────────────────────── */
+@layer base {
+  :root {
+    /* shadcn/ui — LIGHT (hsl space-separated, no commas) ──────────────────── */
+    --background: 0 0% 100%;
+    --foreground: 240 10% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 10% 3.9%;
+    --primary: 262 83% 58%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 4.8% 95.9%;
+    --secondary-foreground: 240 5.9% 10%;
+    --muted: 240 4.8% 95.9%;
+    --muted-foreground: 240 3.8% 46.1%;
+    --accent: 240 4.8% 95.9%;
+    --accent-foreground: 240 5.9% 10%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 5.9% 90%;
+    --input: 240 5.9% 90%;
+    --ring: 262 83% 58%;
+    --radius: 0.5rem;
+
+    /* Sidebar — LIGHT (rgb space-separated integers) ──────────────────────── */
+    --sidebar: 250 250 250;
+    --sidebar-border: 228 228 231;
+    --sidebar-foreground: 24 24 27;
+    --sidebar-muted: 161 161 170;
+    --sidebar-icon: 161 161 170;
+    --sidebar-hover: 244 244 245;
+    --sidebar-active: 237 233 254;
+    --sidebar-active-fg: 109 40 217;
+  }
+
+  .dark {
+    /* shadcn/ui — DARK ────────────────────────────────────────────────────── */
+    --background: 240 10% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 240 10% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 10% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 263 70% 65%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 240 3.7% 15.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 3.7% 15.9%;
+    --muted-foreground: 240 5% 64.9%;
+    --accent: 240 3.7% 15.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 240 3.7% 15.9%;
+    --input: 240 3.7% 15.9%;
+    --ring: 263 70% 65%;
+
+    /* Sidebar — DARK ──────────────────────────────────────────────────────── */
+    --sidebar: 15 15 17;
+    --sidebar-border: 39 39 42;
+    --sidebar-foreground: 250 250 250;
+    --sidebar-muted: 82 82 91;
+    --sidebar-icon: 82 82 91;
+    --sidebar-hover: 27 27 30;
+    --sidebar-active: 46 16 101;
+    --sidebar-active-fg: 196 181 253;
+  }
+
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  code,
+  pre,
+  .font-mono {
+    font-family: 'JetBrains Mono', ui-monospace, monospace;
+  }
+}
+
+/* ── Sidebar utilities (rgb-based, separate from shadcn hsl system) ────────── */
+@layer utilities {
+  .bg-sidebar {
+    background-color: rgb(var(--sidebar));
+  }
+
+  .border-sidebar-border {
+    border-color: rgb(var(--sidebar-border));
+  }
+
+  .text-sidebar-foreground {
+    color: rgb(var(--sidebar-foreground));
+  }
+
+  .text-sidebar-muted {
+    color: rgb(var(--sidebar-muted));
+  }
+
+  .text-sidebar-icon {
+    color: rgb(var(--sidebar-icon));
+  }
+
+  .bg-sidebar-hover {
+    background-color: rgb(var(--sidebar-hover));
+  }
+
+  .bg-sidebar-active {
+    background-color: rgb(var(--sidebar-active));
+  }
+
+  .text-sidebar-active-fg {
+    color: rgb(var(--sidebar-active-fg));
+  }
+
+  /* Thin scrollbar */
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--sidebar-border)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background-color: rgb(var(--sidebar-border));
+    border-radius: 9999px;
+  }
+
+  /* Page fade-in */
+  .fade-in {
+    animation: fadeIn 0.15s ease-out;
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Mobile sidebar slide-in */
+  .slide-in-from-left {
+    animation: slideInLeft 200ms ease-out both;
+  }
+
+  @keyframes slideInLeft {
+    from {
+      transform: translateX(-100%);
+    }
+
+    to {
+      transform: translateX(0);
+    }
+  }
+}

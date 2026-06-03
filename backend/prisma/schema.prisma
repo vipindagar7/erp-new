@@ -1,0 +1,566 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../generated/prisma"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── Users & Auth ──────────────────────────────────────────────
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  role         String
+  extra_roles  String[] @default([])
+  permissions  String[] @default([])
+  isBlocked    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  student             Student?
+  faculty             Faculty?
+  admin               Admin?
+  passwordResetTokens PasswordResetToken[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  user_id   String
+  expires   DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// ─── Admin ─────────────────────────────────────────────────────
+model Admin {
+  id      String @id @default(uuid())
+  user_id String @unique
+  name    String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// ─── Department / Program / Course ─────────────────────────────
+model Department {
+  id   String @id @default(uuid())
+  name String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  programs      Program[]
+  faculties     Faculty[]
+  students      Student[]
+  enrollments   StudentEnrollment[]
+  feedbackForms FeedbackForm[]
+}
+
+model Program {
+  id      String @id @default(uuid())
+  name    String
+  dept_id String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  department         Department          @relation(fields: [dept_id], references: [id], onDelete: Cascade)
+  courses            Course[]
+  students           Student[]
+  enrollments        StudentEnrollment[]
+  curriculumSubjects CurriculumSubject[]
+
+  @@index([dept_id])
+}
+
+model Course {
+  id         String @id @default(uuid())
+  name       String
+  program_id String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program            Program             @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  sections           Section[]
+  students           Student[]
+  enrollments        StudentEnrollment[]
+  feedbackForms      FeedbackForm[]
+  curriculumSubjects CurriculumSubject[]
+
+  @@index([program_id])
+}
+
+// ─── Subject ───────────────────────────────────────────────────
+model Subject {
+  id       String  @id @default(uuid())
+  name     String
+  code     String  @unique
+  nickname String?
+  category String  @default("THEORY") // THEORY | PRACTICAL | TRAINING | LIBRARY | TUTORIAL | OTHER
+  credits  Int     @default(4)
+
+  createdAt DateTime @default(now())
+
+  students           StudentSubject[]
+  facultySubjects    FacultySubject[]
+  feedbackForms      FeedbackForm[]
+  sectionSubjects    SectionSubject[]
+  curriculumSubjects CurriculumSubject[]
+}
+
+// ─── Section ───────────────────────────────────────────────────
+model Section {
+  id                   String  @id @default(uuid())
+  name                 String
+  course_id            String
+  semester             Int
+  batch                String // mandatory e.g. "2023-2027"
+  status               String  @default("ACTIVE") // ACTIVE | COMPLETED | ARCHIVED | ALUMNI | SUSPENDED
+  room_no              String?
+  class_coordinator_id String?
+
+  course            Course   @relation(fields: [course_id], references: [id])
+  class_coordinator Faculty? @relation("SectionCoordinator", fields: [class_coordinator_id], references: [id])
+
+  students        Student[]
+  enrollments     StudentEnrollment[]
+  feedbackForms   FeedbackForm[]
+  sectionSubjects SectionSubject[]
+}
+
+model SectionSubject {
+  id         String  @id @default(uuid())
+  section_id String
+  subject_id String
+  faculty_id String?
+  type       String  @default("REGULAR") // REGULAR | ELECTIVE | COMBINED | TRAINING | OTHER
+  status     String  @default("ACTIVE") // ACTIVE | COMPLETED | REMOVED
+
+  section Section  @relation(fields: [section_id], references: [id], onDelete: Cascade)
+  subject Subject  @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+  faculty Faculty? @relation("SectionSubjectFaculty", fields: [faculty_id], references: [id], onDelete: SetNull)
+
+  @@unique([section_id, subject_id])
+}
+
+model AuditLog {
+  id             String    @id @default(uuid())
+  user_id        String? // null = system action
+  user_email     String? // denormalized for quick display
+  user_role      String?
+  action         String // CREATE | UPDATE | DELETE | RESTORE | LOGIN | LOGOUT | PROMOTE | DEMOTE | BLOCK | UNBLOCK | ASSIGN | REMOVE
+  module         String // student | faculty | section | subject | course | program | department | feedback_form | curriculum | enrollment | section_subject | auth
+  record_id      String? // primary key of the affected record
+  record_label   String? // human-readable label e.g. "BTech CSE–A Sem4"
+  prev_data      Json? // full JSON snapshot BEFORE the change
+  new_data       Json? // full JSON snapshot AFTER the change
+  changed_fields String[] // ["name","status"] — only fields that actually changed
+  ip             String?
+  user_agent     String?
+  reversible     Boolean   @default(false) // true = prev_data has enough to restore
+  restored_at    DateTime? // set when a super admin restores this entry
+  restored_by    String? // user_id of who restored
+  createdAt      DateTime  @default(now())
+
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([module, record_id])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ─── Student ───────────────────────────────────────────────────
+model Student {
+  id      String @id @default(uuid())
+  user_id String @unique
+
+  name       String
+  first_name String
+  last_name  String
+
+  roll_no       String? @unique
+  enrollment_no String? @unique
+  group_no      String? @default("null")
+
+  dob    DateTime?
+  gender String?
+  phone  String?
+
+  father_name  String?
+  mother_name  String?
+  father_phone String?
+  mother_phone String?
+
+  admission_year Int?
+  batch_year     Int?
+  session        String?
+
+  address           String?
+  city              String?
+  state             String?
+  pincode           String?
+  personal_email    String?
+  aadhar_no         String?
+  pan_no            String?
+  religion          String?
+  category          String?
+  mode_of_admission String?
+  group             String?
+
+  dept_id    String
+  section_id String
+  course_id  String
+  program_id String
+  status     String   @default("ACTIVE")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user       User       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  department Department @relation(fields: [dept_id], references: [id])
+  section    Section    @relation(fields: [section_id], references: [id])
+  course     Course     @relation(fields: [course_id], references: [id])
+  program    Program    @relation(fields: [program_id], references: [id])
+
+  subjects            StudentSubject[]
+  feedbackResponses   FeedbackResponse[]
+  enrollments         StudentEnrollment[]
+  feedbackForms       FeedbackFormStudent[]
+  specialGroupMembers SpecialGroupMember[]
+
+  @@index([dept_id])
+  @@index([section_id])
+  @@index([course_id])
+  @@index([program_id])
+}
+
+model StudentSubject {
+  id         String @id @default(uuid())
+  student_id String
+  subject_id String
+
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([student_id, subject_id])
+}
+
+model StudentEnrollment {
+  id         String @id @default(uuid())
+  student_id String
+  section_id String
+
+  academic_year String
+  semester      Int
+  batch_year    Int    @default(0)
+
+  dept_id    String
+  course_id  String
+  program_id String
+
+  status     String  @default("ACTIVE")
+  is_current Boolean @default(true)
+
+  enrolled_at  DateTime  @default(now())
+  completed_at DateTime?
+  remarks      String?
+
+  student    Student    @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  section    Section    @relation(fields: [section_id], references: [id])
+  department Department @relation(fields: [dept_id], references: [id])
+  course     Course     @relation(fields: [course_id], references: [id])
+  program    Program    @relation(fields: [program_id], references: [id])
+
+  @@index([student_id])
+  @@index([section_id])
+  @@index([is_current])
+  @@index([academic_year, semester])
+}
+
+model SpecialGroup {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  type        String   @default("OTHER") // EVENT|SCHOLARSHIP|COMMITTEE|OTHER
+  created_by  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members       SpecialGroupMember[]
+  feedbackForms FeedbackForm[]
+}
+
+model SpecialGroupMember {
+  id         String   @id @default(uuid())
+  group_id   String
+  student_id String
+  addedAt    DateTime @default(now())
+
+  group   SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  student Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, student_id])
+}
+
+// ── Faculty Groups ─────────────────────────────────────────────────────────────
+model FacultyGroup {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  type        String   @default("OTHER") // DEPARTMENT | COMMITTEE | EVENT | OTHER
+  created_by  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members FacultyGroupMember[]
+
+  @@index([type])
+}
+
+model FacultyGroupMember {
+  id         String   @id @default(uuid())
+  group_id   String
+  faculty_id String
+  addedAt    DateTime @default(now())
+
+  group   FacultyGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  faculty Faculty      @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, faculty_id])
+  @@index([group_id])
+}
+
+// ─── Faculty ───────────────────────────────────────────────────
+model Faculty {
+  id      String @id @default(uuid())
+  user_id String @unique
+
+  name           String
+  nick_name      String?
+  first_name     String?
+  last_name      String?
+  personal_email String?
+  employee_type  String?
+  religion       String?
+  category       String?
+  aadhar_no      String?
+  pan_no         String?
+  status         String? @default("ACTIVE")
+  emp_id         String? @unique
+  designation    String?
+  phone          String?
+  dept_id        String?
+
+  dob          DateTime?
+  gender       String?
+  joining_date DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  department Department? @relation(fields: [dept_id], references: [id])
+
+  subjects              FacultySubject[]
+  feedbackForms         FeedbackForm[]
+  sectionSubjects       SectionSubject[]     @relation("SectionSubjectFaculty")
+  coordinating_sections Section[]            @relation("SectionCoordinator")
+  facultyGroups         FacultyGroupMember[]
+
+  @@index([dept_id])
+}
+
+model FacultySubject {
+  id         String @id @default(uuid())
+  faculty_id String
+  subject_id String
+
+  faculty Faculty @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([faculty_id, subject_id])
+}
+
+// ─── Feedback ──────────────────────────────────────────────────
+model FeedbackCategory {
+  id        String   @id @default(uuid())
+  name      String
+  type      String // TEACHING | DEPARTMENT | BATCH | GENERAL | CUSTOM
+  is_active Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  questions          FeedbackQuestion[]
+  forms              FeedbackForm[]
+  feedbackFormGroups FeedbackFormGroup[]
+}
+
+model FeedbackQuestion {
+  id          String   @id @default(uuid())
+  category_id String
+  question    String
+  type        String // RATING | TEXT | MCQ
+  options     String[]
+  is_required Boolean  @default(true)
+  order       Int      @default(0)
+
+  category FeedbackCategory @relation(fields: [category_id], references: [id], onDelete: Cascade)
+  answers  FeedbackAnswer[]
+}
+
+model FeedbackForm {
+  id           String   @id @default(uuid())
+  category_id  String
+  title        String
+  is_active    Boolean  @default(true)
+  action_taken String?
+  start_date   DateTime
+  end_date     DateTime
+
+  // Type-specific targeting
+  all_students  Boolean @default(false)
+  batch_year    Int?
+  department_id String?
+  course_id     String?
+
+  faculty_id String?
+  subject_id String?
+  section_id String?
+  group_id   String?
+
+  specialGroupId      String?
+  feedbackFormGroupId String?
+
+  category          FeedbackCategory   @relation(fields: [category_id], references: [id])
+  department        Department?        @relation(fields: [department_id], references: [id])
+  course            Course?            @relation(fields: [course_id], references: [id])
+  faculty           Faculty?           @relation(fields: [faculty_id], references: [id])
+  subject           Subject?           @relation(fields: [subject_id], references: [id])
+  section           Section?           @relation(fields: [section_id], references: [id])
+  specialGroup      SpecialGroup?      @relation(fields: [specialGroupId], references: [id])
+  feedbackFormGroup FeedbackFormGroup? @relation(fields: [feedbackFormGroupId], references: [id], onDelete: SetNull)
+
+  responses FeedbackResponse[]
+  students  FeedbackFormStudent[]
+}
+
+// ── Feedback Form Groups (Teaching bundles) ─────────────────────────────────
+model FeedbackFormGroup {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  category_id String
+  start_date  DateTime
+  end_date    DateTime
+  is_active   Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  category      FeedbackCategory @relation(fields: [category_id], references: [id])
+  feedbackForms FeedbackForm[]
+
+  @@index([category_id])
+}
+
+model FeedbackFormStudent {
+  form_id    String
+  student_id String
+
+  form    FeedbackForm @relation(fields: [form_id], references: [id], onDelete: Cascade)
+  student Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@id([form_id, student_id])
+}
+
+model FeedbackResponse {
+  id          String   @id @default(uuid())
+  form_id     String
+  student_id  String
+  submittedAt DateTime @default(now())
+
+  form    FeedbackForm     @relation(fields: [form_id], references: [id], onDelete: Cascade)
+  student Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  answers FeedbackAnswer[]
+
+  @@unique([form_id, student_id])
+}
+
+model FeedbackAnswer {
+  id          String  @id @default(uuid())
+  response_id String
+  question_id String
+  answer_text String?
+  rating      Int?
+  selected    String?
+
+  response FeedbackResponse @relation(fields: [response_id], references: [id], onDelete: Cascade)
+  question FeedbackQuestion @relation(fields: [question_id], references: [id])
+
+  @@unique([response_id, question_id])
+}
+
+// ─── Notifications ─────────────────────────────────────────────
+model Notification {
+  id         String           @id @default(uuid())
+  user_id    String
+  type       NotificationType
+  title      String
+  message    String
+  is_read    Boolean          @default(false)
+  data       Json?
+  created_at DateTime         @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, is_read])
+  @@index([created_at])
+}
+
+enum NotificationType {
+  NEW_FEEDBACK_FORM
+  PROMOTION
+  DEMOTION
+  SECTION_CHANGE
+  FORM_CLOSED
+  GENERAL
+  ACCOUNT_BLOCKED
+  ACCOUNT_UNBLOCKED
+}
+
+// ── Curriculum — subject list per program+course+semester ─────────────────────
+model CurriculumSubject {
+  id         String  @id @default(uuid())
+  program_id String
+  course_id  String
+  semester   Int
+  subject_id String
+  type       String  @default("REGULAR") // REGULAR | ELECTIVE | PRACTICAL | TRAINING | OTHER
+  is_core    Boolean @default(true) // core vs elective
+  credits    Int? // override subject default
+  order      Int     @default(0) // display/sort order
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  program Program @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  course  Course  @relation(fields: [course_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([course_id, semester, subject_id])
+  @@index([program_id])
+  @@index([course_id, semester])
+}
+
+// ── Feedback Form Groups migration helper ────────────────────────────────────
+// Run this SQL if FeedbackFormGroup table doesn't exist yet:
+// psql $DATABASE_URL -f migrations/add_feedback_form_group.sql
