@@ -1,64 +1,59 @@
+// backend/modules/feedback/feedback.routes.js
 import { Router } from "express";
 import multer from "multer";
 import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
 import * as c from "./feedback.controller.js";
-import { validate, submitFormSchema, updateFormSchema, createCategorySchema, updateCategorySchema, createQuestionSchema, updateQuestionSchema } from "./feedback.validator.js";
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage() });
 const ADMIN = ["ADMIN", "SUPER_ADMIN"];
+const SUPER = ["SUPER_ADMIN"];
+const STAFF = ["ADMIN", "SUPER_ADMIN", "HOD", "FACULTY"];
+const ALL = ["ADMIN", "SUPER_ADMIN", "HOD", "FACULTY", "CLASS_COORDINATOR", "STUDENT"];
 
 // ── Categories ────────────────────────────────────────────────
-router.get("/categories", authenticate, c.listCategories);
-router.get("/categories/:id", authenticate, c.getCategoryById);
-router.post("/categories", authenticate, authorize(...ADMIN), validate(createCategorySchema), c.createCategory);
-router.patch("/categories/:id", authenticate, authorize(...ADMIN), validate(updateCategorySchema), c.updateCategory);
-router.delete("/categories/:id", authenticate, authorize(...ADMIN), c.deleteCategory);
+router.get("/categories", authenticate, authorize(...STAFF), c.listCategories);
+router.post("/categories", authenticate, authorize(...ADMIN), c.createCategory);
+router.patch("/categories/:id", authenticate, authorize(...ADMIN), c.updateCategory);
+router.delete("/categories/:id", authenticate, authorize(...SUPER), c.deleteCategory);
 
 // ── Questions ─────────────────────────────────────────────────
-// Static routes BEFORE /:id
-router.get("/questions/template", authenticate, authorize(...ADMIN), c.getQuestionTemplate);
+router.get("/questions/template", authenticate, authorize(...ADMIN), c.getQuestionsTemplate);
 router.post("/questions/bulk-upload", authenticate, authorize(...ADMIN), upload.single("file"), c.bulkUploadQuestions);
-router.get("/questions", authenticate, c.listQuestions);
-router.get("/questions/:id", authenticate, c.getQuestionById);
-router.post("/questions", authenticate, authorize(...ADMIN), validate(createQuestionSchema), c.createQuestion);
-router.patch("/questions/:id", authenticate, authorize(...ADMIN), validate(updateQuestionSchema), c.updateQuestion);
-router.delete("/questions/:id", authenticate, authorize(...ADMIN), c.deleteQuestion);
+router.get("/questions", authenticate, authorize(...STAFF), c.listQuestions);
+router.post("/questions", authenticate, authorize(...ADMIN), c.createQuestion);
+router.patch("/questions/:id", authenticate, authorize(...ADMIN), c.updateQuestion);
+router.delete("/questions/:id", authenticate, authorize(...SUPER), c.deleteQuestion);
 
-// ── Forms — static paths BEFORE /:formId ─────────────────────
-router.get("/forms", authenticate, c.listForms);
+// ── Forms ─────────────────────────────────────────────────────
+router.get("/forms", authenticate, authorize(...STAFF), c.listForms);
 router.post("/forms", authenticate, authorize(...ADMIN), c.createForm);
+router.get("/forms/:id", authenticate, authorize(...STAFF), c.getForm);
+router.patch("/forms/:id", authenticate, authorize(...ADMIN), c.updateForm);
+router.delete("/forms/:id", authenticate, authorize(...SUPER), c.deleteForm);
+router.patch("/forms/:id/toggle", authenticate, authorize(...ADMIN), c.toggleForm);
+router.patch("/forms/:id/action", authenticate, authorize(...ADMIN), c.setFormAction);
+router.get("/forms/:id/results", authenticate, authorize(...STAFF), c.getFormResults);
+router.get("/forms/:id/export", authenticate, authorize(...STAFF), c.exportFormResults);
+router.get("/forms/:id/template", authenticate, authorize(...ADMIN), c.getFormTemplate);
+router.post("/forms/:id/submit", authenticate, authorize(...ALL), c.submitFeedback);
+router.post("/forms/:id/bulk-submit", authenticate, authorize(...ADMIN), upload.single("file"), c.bulkSubmit);
+router.delete("/forms/:id/responses", authenticate, authorize(...SUPER), c.deleteFormResponses);
 
-// ── Forms — :formId sub-routes (static sub-paths first) ──────
-router.delete("/forms/:formId/responses", authenticate, authorize(...ADMIN), c.deleteFormResponses);
-router.patch("/forms/:formId/toggle", authenticate, authorize(...ADMIN), c.toggleFormActive);
-router.patch("/forms/:formId/action", authenticate, authorize(...ADMIN), c.updateActionTaken);
-router.get("/forms/:formId/questions", authenticate, c.getFormQuestions);
-router.get("/forms/:formId/bulk-template", authenticate, authorize(...ADMIN), c.getBulkTemplate);
-router.post("/forms/:formId/bulk-submit", authenticate, authorize(...ADMIN), upload.single("file"), c.bulkSubmit);
-router.get("/forms/:formId/results", authenticate, authorize(...ADMIN, "FACULTY"), c.getFormResults);
-router.get("/forms/:formId/export", authenticate, authorize(...ADMIN), c.exportFormResults);
+// ── Groups ────────────────────────────────────────────────────
+router.get("/groups", authenticate, authorize(...STAFF), c.listGroups);
+router.get("/groups/:id", authenticate, authorize(...STAFF), c.getGroup);
+router.patch("/groups/:id", authenticate, authorize(...ADMIN), c.updateGroup);
+router.delete("/groups/:id", authenticate, authorize(...SUPER), c.deleteGroup);
+router.get("/groups/:id/template", authenticate, authorize(...ADMIN), c.getGroupTemplate);
+router.post("/groups/:id/bulk-submit", authenticate, authorize(...ADMIN), upload.single("file"), c.bulkSubmitGroup);
+router.get("/groups/:id/export", authenticate, authorize(...STAFF), c.exportGroupResults);
 
-// ── Forms — generic CRUD (:formId last) ──────────────────────
-router.get("/forms/:formId", authenticate, c.getFormById);
-router.patch("/forms/:formId", authenticate, authorize(...ADMIN), validate(updateFormSchema), c.updateForm);
-router.delete("/forms/:formId", authenticate, authorize(...ADMIN), c.deleteForm);
+// ── Teaching report ───────────────────────────────────────────
+router.get("/teaching-report", authenticate, authorize(...STAFF), c.getTeachingReport);
+router.get("/teaching-report/export/:level/:id", authenticate, authorize(...STAFF), c.exportTeachingReport);
 
-// ── Student ───────────────────────────────────────────────────
-router.get("/my-forms", authenticate, authorize("STUDENT"), c.getMyForms);
-router.post("/forms/:formId/submit", authenticate, authorize("STUDENT"), validate(submitFormSchema), c.submitFeedback);
-
-// ── Form Groups ───────────────────────────────────────────────
-router.get("/groups", authenticate, authorize(...ADMIN), c.listFormGroups);
-router.get("/groups/:groupId", authenticate, authorize(...ADMIN), c.getFormGroup);
-router.patch("/groups/:groupId", authenticate, authorize(...ADMIN), c.updateFormGroup);
-router.delete("/groups/:groupId", authenticate, authorize(...ADMIN), c.deleteFormGroup);
-router.get("/groups/:groupId/export", authenticate, authorize(...ADMIN), c.exportGroupResults);
-router.get("/groups/:groupId/bulk-template", authenticate, authorize(...ADMIN), c.getGroupBulkTemplate);
-router.post("/groups/:groupId/bulk-submit", authenticate, authorize(...ADMIN), upload.single("file"), c.bulkSubmitGroupResponses);
-
-// ── Teaching Report ───────────────────────────────────────────
-router.get("/teaching-report", authenticate, authorize(...ADMIN, "FACULTY"), c.getTeachingReport);
-router.get("/export-level", authenticate, authorize(...ADMIN), c.exportLevelReport);
+// ── Student: my forms ─────────────────────────────────────────
+router.get("/my-forms", authenticate, authorize(...ALL), c.getMyForms);
 
 export default router;

@@ -1,6 +1,7 @@
-
-import { randomUUID } from "crypto";
+import { randomUUID as cryptoRandomUUID } from "crypto";
 import prisma from "../../utils/prisma.js";
+import { getCurrentSessionId } from "../session/session.service.js";
+import { randomUUID } from "crypto";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const now = () => new Date().toISOString();
@@ -124,58 +125,139 @@ export const copySemesterCurriculum = async ({ course_id, program_id, from_semes
 };
 
 // ── AUTO-ASSIGN subjects to a section from curriculum ────────────────────────
-export const autoAssignSubjectsToSection = async (section_id) => {
+// ── Internal helper: write to SectionSubjectHistory ─────────────────────────
+const logSubjectHistory = async (entries) => {
+  if (!entries?.length) return;
+  try {
+    const _sessionId = await getCurrentSessionId().catch(() => "DEFAULT-SESSION-0000-0000-000000000001");
+    const enriched = entries.map(e => ({ ...e, session_id: e.session_id || _sessionId }));
+    await prisma.sectionSubjectHistory.createMany({ data: enriched, skipDuplicates: false });
+  } catch (e) { console.error("[curriculum] history log failed:", e.message); }
+};
+
+export const autoAssignSubjectsToSection = async (section_id, { reason = "manual", changed_by = null } = {}) => {
   const section = await prisma.section.findUnique({
     where: { id: section_id },
     include: {
       course: { select: { id: true, name: true, program_id: true } },
-      sectionSubjects: { select: { subject_id: true, faculty_id: true, status: true } },
+      sectionSubjects: { select: { subject_id: true, faculty_id: true, status: true, type: true } },
     },
   });
   if (!section) { const e = new Error("Section not found"); e.statusCode = 404; throw e; }
 
+  // Get curriculum subjects for this course+semester
   const curriculum = await qCS(
-    `SELECT cs.*, s.name as subject_name, s.code as subject_code
+    `SELECT cs.subject_id, cs.type, cs."order",
+            s.name as subject_name, s.code as subject_code
      FROM "CurriculumSubject" cs
      JOIN "Subject" s ON s.id = cs.subject_id
-     WHERE cs.course_id=$1 AND cs.semester=$2
+     WHERE cs.course_id = $1 AND cs.semester = $2
      ORDER BY cs."order"`,
     section.course_id, section.semester
   );
 
   if (!curriculum.length) {
     return {
-      assigned: [], skipped: [], already_had: [],
-      message: `No curriculum defined for ${section.course?.name} Sem ${section.semester} — define it first in the Curriculum page`,
+      assigned: [], removed: [], updated: [], already_had: [], skipped: [],
+      message: `No curriculum defined for ${section.course?.name} Sem ${section.semester} — define it in the Curriculum page first`,
     };
   }
 
-  const existing = new Map(section.sectionSubjects.map((ss) => [ss.subject_id, ss]));
-  const assigned = [];
-  const already_had = [];
+  const curriculumIds = new Set(curriculum.map((c) => c.subject_id));
+  const existing = new Navigation(section.sectionSubjects.map((ss) => [ss.subject_id, ss]));
 
+  const assigned = [];
+  const updated = [];
+  const removed = [];
+  const already_had = [];
+  const historyLogs = [];
+
+  // ── Step 1: Assign / reactivate subjects IN the curriculum ────────────────
   for (const cs of curriculum) {
     const ex = existing.get(cs.subject_id);
     if (ex) {
       if (ex.status === "REMOVED") {
-        // Reactivate
+        // Reactivate — was previously removed
         await prisma.sectionSubject.update({
           where: { section_id_subject_id: { section_id, subject_id: cs.subject_id } },
           data: { status: "ACTIVE", type: cs.type },
         });
-        assigned.push({ subject_id: cs.subject_id, name: cs.subject_name, action: "reactivated" });
+        assigned.push({ subject_id: cs.subject_id, name: cs.subject_name, code: cs.subject_code, action: "reactivated" });
+        historyLogs.push({
+          id: cryptoRandomUUID(), section_id, subject_id: cs.subject_id,
+          action: "REACTIVATED", reason,
+          prev_data: { status: ex.status, type: ex.type },
+          new_data: { status: "ACTIVE", type: cs.type },
+          changed_by,
+        });
+      } else if (ex.type !== cs.type) {
+        // Type changed in curriculum — update
+        await prisma.sectionSubject.update({
+          where: { section_id_subject_id: { section_id, subject_id: cs.subject_id } },
+          data: { type: cs.type },
+        });
+        updated.push({ subject_id: cs.subject_id, name: cs.subject_name, code: cs.subject_code, prev_type: ex.type, new_type: cs.type });
+        historyLogs.push({
+          id: cryptoRandomUUID(), section_id, subject_id: cs.subject_id,
+          action: "UPDATED", reason,
+          prev_data: { status: ex.status, type: ex.type },
+          new_data: { status: ex.status, type: cs.type },
+          changed_by,
+        });
       } else {
-        already_had.push({ subject_id: cs.subject_id, name: cs.subject_name });
+        already_had.push({ subject_id: cs.subject_id, name: cs.subject_name, code: cs.subject_code });
       }
     } else {
+      // New — create
+      const _sid = await getCurrentSessionId();
       await prisma.sectionSubject.create({
-        data: { section_id, subject_id: cs.subject_id, type: cs.type, status: "ACTIVE" },
+        data: { session_id: _sid, section_id, subject_id: cs.subject_id, type: cs.type, status: "ACTIVE" },
       });
-      assigned.push({ subject_id: cs.subject_id, name: cs.subject_name, action: "created" });
+      assigned.push({ subject_id: cs.subject_id, name: cs.subject_name, code: cs.subject_code, action: "assigned" });
+      historyLogs.push({
+        id: cryptoRandomUUID(), section_id, subject_id: cs.subject_id,
+        action: reason.startsWith("promote") ? "AUTO_ASSIGNED" : "ASSIGNED", reason,
+        prev_data: null,
+        new_data: { status: "ACTIVE", type: cs.type },
+        changed_by,
+      });
     }
   }
 
-  return { assigned, already_had, skipped: [], total_curriculum: curriculum.length };
+  // ── Step 2: Remove ACTIVE subjects NOT in the new curriculum ─────────────
+  // Only applies when triggered by semester change (promote/demote)
+  const isSemesterChange = reason.startsWith("promote") || reason.startsWith("demote");
+  if (isSemesterChange) {
+    for (const [subject_id, ex] of existing) {
+      if (!curriculumIds.has(subject_id) && ex.status === "ACTIVE") {
+        await prisma.sectionSubject.update({
+          where: { section_id_subject_id: { section_id, subject_id } },
+          data: { status: "REMOVED" },
+        });
+        removed.push({ subject_id, action: "removed" });
+        historyLogs.push({
+          id: cryptoRandomUUID(), section_id, subject_id,
+          action: "AUTO_REMOVED", reason,
+          prev_data: { status: ex.status, type: ex.type, faculty_id: ex.faculty_id },
+          new_data: { status: "REMOVED" },
+          changed_by,
+        });
+      }
+    }
+  }
+
+  // Write all history in one batch
+  await logSubjectHistory(historyLogs);
+
+  return {
+    assigned,
+    updated,
+    removed,
+    already_had,
+    skipped: [],
+    total_curriculum: curriculum.length,
+    history_logged: historyLogs.length,
+  };
 };
 
 // ── BULK auto-assign to multiple sections ─────────────────────────────────────
@@ -396,5 +478,37 @@ export const bulkUploadCurriculum = async (buffer) => {
   }
 
   results.total = results.created + results.updated + results.failed.length;
+
+  // Auto-reassign subjects to all sections whose course+semester was updated
+  // Runs in background — doesn't block the response
+  if (results.created > 0 || results.updated > 0) {
+    const affectedSheets = new Set(
+      wb.SheetNames.filter((n) => !["subjects (reference)", "instructions"].includes(n.toLowerCase()))
+    );
+    setImmediate(async () => {
+      try {
+        for (const sheetName of affectedSheets) {
+          const ws = wb.Sheets[sheetName];
+          const allRows = xlsx.utils.sheet_to_json(ws, { header: 1, defval: "" });
+          const metaRow = allRows[2] || [];
+          const courseId = String(metaRow[0] || "").split(":").slice(1).join(":").trim();
+          if (!courseId) continue;
+
+          // Find all sections for this course+semester and auto-assign
+          const sections = await prisma.section.findMany({
+            where: { course_id: courseId, status: "ACTIVE" },
+            select: { id: true },
+          });
+          for (const sec of sections) {
+            await autoAssignSubjectsToSection(sec.id, {
+              reason: "curriculum_upload",
+              changed_by: null,
+            }).catch(() => { });
+          }
+        }
+      } catch (e) { console.error("[curriculum] post-upload auto-assign failed:", e.message); }
+    });
+  }
+
   return results;
 };

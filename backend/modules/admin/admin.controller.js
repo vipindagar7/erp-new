@@ -1,106 +1,178 @@
 // backend/modules/admin/admin.controller.js
-import * as svc from "./admin.service.js";
+import * as adminService from "./admin.service.js";
 
-const ok       = (res, data, status = 200)    => res.status(status).json({ success: true, ...data });
-const fail     = (res, e, next)               => { if (e?.statusCode) return res.status(e.statusCode).json({ success: false, message: e.message }); next(e); };
-const notFound = (res, msg = "Not found")     => res.status(404).json({ success: false, message: msg });
-const sendXlsx = (res, buf, name)             => {
-  res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  res.setHeader("Content-Disposition", `attachment; filename=${name}`);
-  return res.send(buf);
-};
-
-// ── Dashboard ────────────────────────────────────────────────
-export const getDashboardStats    = async (req, res, next) => { try { ok(res, { data: await svc.getDashboardStats() }); } catch (e) { fail(res, e, next); } };
-export const getDashboardActivity = async (req, res, next) => { try { ok(res, { data: await svc.getActivityFeed() }); } catch (e) { fail(res, e, next); } };
-
-// ── Admin CRUD ───────────────────────────────────────────────
-export const listAdmins = async (req, res, next) => {
+export async function getDashboard(req, res) {
   try {
-    const { page, limit, search } = req.validated ?? req.query;
-    ok(res, await svc.listAdmins({ page, limit, search }));
-  } catch (e) { fail(res, e, next); }
-};
+    const data = await adminService.getDashboardStats();
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
 
-export const getAdminById = async (req, res, next) => {
+export async function getDashboardActivity(req, res) {
   try {
-    const data = await svc.getAdminById(req.params.id);
-    if (!data) return notFound(res);
-    ok(res, { admin: data });
-  } catch (e) { fail(res, e, next); }
-};
+    const data = await adminService.getActivityFeed();
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
 
-export const createAdmin = async (req, res, next) => {
+export async function getAll(req, res) {
   try {
-    const result = await svc.createAdmin(req.body);
-    if (result.error === "email_taken")
+    const { page = 1, limit = 20, search } = req.query;
+    const result = await adminService.listAdmins({ page: Number(page), limit: Number(limit), search });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function getOne(req, res) {
+  try {
+    const data = await adminService.getAdminById(req.params.id);
+    if (!data) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function create(req, res) {
+  try {
+    const result = await adminService.createAdmin(req.validatedData ?? req.body);
+    if (result?.error === "email_taken")
       return res.status(409).json({ success: false, message: "Email already in use" });
-    ok(res, result, 201);
-  } catch (e) { fail(res, e, next); }
-};
+    res.status(201).json({ success: true, data: result.admin });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
 
-export const updateAdmin = async (req, res, next) => {
+export async function update(req, res) {
   try {
-    const data = await svc.updateAdmin(req.params.id, req.body);
-    if (!data) return notFound(res);
-    ok(res, { admin: data });
-  } catch (e) { fail(res, e, next); }
-};
+    const data = await adminService.updateAdmin(req.params.id, req.validatedData ?? req.body);
+    if (!data) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
 
-export const updatePermissions = async (req, res, next) => {
+export async function remove(req, res) {
   try {
-    const { permissions } = req.body;
-    if (!Array.isArray(permissions))
-      return res.status(400).json({ success: false, message: "permissions must be an array" });
-    const data = await svc.updatePermissions(req.params.id, permissions);
-    if (!data) return notFound(res);
-    ok(res, { admin: data });
-  } catch (e) { fail(res, e, next); }
-};
+    const result = await adminService.deleteAdmin(req.params.id, req.user.id);
+    if (result?.error === "not_found")
+      return res.status(404).json({ success: false, message: "Not found" });
+    if (result?.error === "cannot_delete_super_admin")
+      return res.status(403).json({ success: false, message: "Cannot delete Super Admin" });
+    if (result?.error === "cannot_delete_self")
+      return res.status(403).json({ success: false, message: "Cannot delete your own account" });
+    res.json({ success: true, message: "Deleted" });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
 
-export const toggleBlock = async (req, res, next) => {
+export async function blockUser(req, res) {
   try {
-    if (req.params.id === req.user.id)
-      return res.status(400).json({ success: false, message: "Cannot block yourself" });
-    const data = await svc.toggleBlock(req.params.id);
-    if (!data) return notFound(res);
-    ok(res, data);
-  } catch (e) { fail(res, e, next); }
-};
+    const data = await adminService.toggleBlock(req.params.id);
+    if (!data) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
 
-export const deleteAdmin = async (req, res, next) => {
+export async function resetPassword(req, res) {
   try {
-    const result = await svc.deleteAdmin(req.params.id, req.user.id);
-    if (result.error === "not_found")                return notFound(res);
-    if (result.error === "cannot_delete_super_admin") return res.status(403).json({ success: false, message: "Cannot delete a Super Admin" });
-    if (result.error === "cannot_delete_self")        return res.status(403).json({ success: false, message: "You cannot delete your own account" });
-    ok(res, { message: "Admin deleted" });
-  } catch (e) { fail(res, e, next); }
-};
+    await adminService.resetUserPassword(req.params.id, req.body?.newPassword);
+    res.json({ success: true, message: "Password reset successfully" });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
 
-// ── Reports ──────────────────────────────────────────────────
-export const exportStudents   = async (req, res, next) => { try { sendXlsx(res, await svc.exportStudentsBySection(req.query.section_id), "students_report.xlsx"); } catch (e) { fail(res, e, next); } };
-export const exportFaculty    = async (req, res, next) => { try { sendXlsx(res, await svc.exportFacultyReport(), "faculty_report.xlsx"); } catch (e) { fail(res, e, next); } };
-export const exportEnrollments= async (req, res, next) => { try { sendXlsx(res, await svc.exportEnrollmentReport(), "enrollment_report.xlsx"); } catch (e) { fail(res, e, next); } };
-
-// ── User actions ──────────────────────────────────────────────
-export const resetUserPassword = async (req, res, next) => {
+export async function impersonate(req, res) {
   try {
-    const { password } = req.body;
-    if (!password || password.length < 6)
-      return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
-    const result = await svc.resetUserPassword(req.params.userId, password);
-    ok(res, { message: `Password reset for ${result.email}` });
-  } catch (e) { fail(res, e, next); }
-};
+    const result = await adminService.impersonateUser(req.params.id, req.user.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
 
-export const impersonateUser = async (req, res, next) => {
+export async function updatePermissions(req, res) {
   try {
-    if (req.params.userId === req.user.id)
-      return res.status(400).json({ success: false, message: "Cannot impersonate yourself" });
-    const result = await svc.impersonateUser(req.params.userId, req.user.id);
-    if (result.user.role === "SUPER_ADMIN")
-      return res.status(403).json({ success: false, message: "Cannot impersonate a Super Admin" });
-    ok(res, { data: result, message: "Impersonation token issued" });
-  } catch (e) { fail(res, e, next); }
-};
+    const data = await adminService.updatePermissions(req.params.id, req.body?.permissions);
+    if (!data) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
+export async function getPermissions(req, res) {
+  try {
+    const data = await adminService.getAdminById(req.params.id);
+    if (!data) return res.status(404).json({ success: false, message: "Not found" });
+    res.json({ success: true, data: { permissions: data.permissions } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function exportStudents(req, res) {
+  try {
+    const buffer = await adminService.exportStudentsBySection(req.query?.section_id);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="students-report.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function exportFaculty(req, res) {
+  try {
+    const buffer = await adminService.exportFacultyReport();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="faculty-report.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function exportEnrollments(req, res) {
+  try {
+    const buffer = await adminService.exportEnrollmentReport();
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="enrollment-report.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function getStudentAnalytics(req, res) {
+  try {
+    const data = await adminService.getStudentAnalytics();
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+ 
+export async function exportStudentsAdvanced(req, res) {
+  try {
+    const buffer = await adminService.exportStudentsAdvanced(req.query);
+    const filename = `students-export-${new Date().toISOString().slice(0,10)}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}

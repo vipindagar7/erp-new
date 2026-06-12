@@ -1,29 +1,85 @@
-import * as svc from "./curriculum.service.js";
+// backend/modules/curriculum/curriculum.controller.js
+import * as curriculumService from "./curriculum.service.js";
 
-const ok   = (res, data, msg = "OK", code = 200) => res.status(code).json({ success: true, message: msg, data });
-const fail = (res, e, next) => { if (e.statusCode) return res.status(e.statusCode).json({ success: false, message: e.message }); next(e); };
-
-export const getCurriculum        = async (req, res, next) => { try { ok(res, await svc.getCurriculum(req.query)); }                                      catch (e) { fail(res, e, next); } };
-export const addSubject           = async (req, res, next) => { try { ok(res, await svc.addCurriculumSubject(req.body), "Added", 201); }                  catch (e) { fail(res, e, next); } };
-export const bulkAdd              = async (req, res, next) => { try { ok(res, await svc.bulkAddCurriculumSubjects(req.body), "Subjects added", 201); }     catch (e) { fail(res, e, next); } };
-export const removeSubject        = async (req, res, next) => { try { ok(res, await svc.removeCurriculumSubject(req.params.id), "Removed"); }              catch (e) { fail(res, e, next); } };
-export const copySemester         = async (req, res, next) => { try { ok(res, await svc.copySemesterCurriculum(req.body), "Copied"); }                    catch (e) { fail(res, e, next); } };
-export const autoAssignSection    = async (req, res, next) => { try { ok(res, await svc.autoAssignSubjectsToSection(req.params.section_id), "Auto-assigned"); } catch (e) { fail(res, e, next); } };
-export const bulkAutoAssign       = async (req, res, next) => { try { ok(res, await svc.bulkAutoAssign(req.body.section_ids || []), "Bulk auto-assigned"); } catch (e) { fail(res, e, next); } };
-
-export const getCurriculumTemplate = async (req, res, next) => {
+export async function getAll(req, res) {
   try {
-    const { buffer, filename } = await svc.getCurriculumTemplate();
+    const { page = 1, limit = 50, program_id, course_id, semester, session_id } = req.query;
+    const result = await curriculumService.getCurriculumSubjects({
+      page: Number(page), limit: Number(limit),
+      program_id, course_id, semester, session_id,
+    });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
+
+export async function addSubject(req, res) {
+  try {
+    const data = await curriculumService.addCurriculumSubject(req.validatedData ?? req.body);
+    res.status(201).json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
+export async function autoAssignSection(req, res) {
+  try {
+    const { id } = req.params;
+    const result = await curriculumService.autoAssignSubjectsToSection(
+      id,
+      req.body?.reason ?? "Manual trigger",
+      req.user?.id
+    );
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
+export async function bulkAutoAssign(req, res) {
+  try {
+    const result = await curriculumService.bulkAutoAssign(req.user?.id);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
+export async function removeSubject(req, res) {
+  try {
+    await curriculumService.deleteCurriculumSubject(req.params.id);
+    res.json({ success: true, message: "Removed" });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
+export async function bulkUpload(req, res) {
+  try {
+    const result = await curriculumService.bulkUploadCurriculum(req.file?.buffer, req.user);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+
+export async function getTemplate(req, res) {
+  try {
+    const buffer = await curriculumService.getCurriculumTemplate();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Disposition", 'attachment; filename="curriculum-template.xlsx"');
     res.send(buffer);
-  } catch (e) { fail(res, e, next); }
-};
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}
 
-export const bulkUploadCurriculum = async (req, res, next) => {
+export async function getHistory(req, res) {
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: "Excel file required" });
-    const results = await svc.bulkUploadCurriculum(req.file.buffer);
-    ok(res, results, `${results.created} added, ${results.updated} updated, ${results.failed.length} failed`);
-  } catch (e) { fail(res, e, next); }
-};
+    const data = await curriculumService.getCurriculumHistory(req.params.section_id);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}

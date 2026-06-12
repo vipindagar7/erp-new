@@ -254,3 +254,23 @@ export const bulkDemote = async (req, res, next) => {
     res.json({ success: true, message: `${results.updated.length} demoted`, data: results });
   } catch (e) { next(e); }
 };
+
+export async function restore(req, res) {
+  try {
+    const data = await studentService.restoreStudent(req.params.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}
+ 
+export async function exportStudents(req, res) {
+  try {
+    const buffer = await studentService.exportStudents(req.query);
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", 'attachment; filename="students.xlsx"');
+    res.send(buffer);
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}

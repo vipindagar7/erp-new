@@ -1,5 +1,5 @@
-import xlsx from "xlsx";
-import prisma from "../../utils/prisma.js";
+import  prisma  from "../../utils/prisma.js";
+import { autoAssignSubjectsToSection } from "../curriculum/curriculum.service.js";
 const masterClient = prisma;
 const replicaClient = prisma;
 import bcrypt from "bcryptjs";
@@ -218,6 +218,7 @@ export const createStudent = async (data) => {
 
     await tx.studentEnrollment.create({
       data: {
+        session_id: await getCurrentSessionId(),
         student_id: student.id,
         section_id,
         academic_year,
@@ -385,6 +386,7 @@ export const promoteStudent = async (id) => {
     await tx.studentEnrollment.create({
       data: {
         student_id: student.id,
+        session_id: await getCurrentSessionId(),
         section_id: student.section_id,
         dept_id: activeEnrollment.dept_id,
         course_id: activeEnrollment.course_id,
@@ -477,6 +479,7 @@ export const bulkPromoteSection = async (section_id, parity) => {
             section_id: student.section_id,
             dept_id: activeEnrollment.dept_id,
             course_id: activeEnrollment.course_id,
+            session_id: await getCurrentSessionId(),
             program_id: activeEnrollment.program_id,
             academic_year: next.academic_year,
             semester: next.semester,
@@ -509,6 +512,24 @@ export const bulkPromoteSection = async (section_id, parity) => {
           data: { semester: nextSem },
         });
         results.section_updated = { semester: nextSem, academic_year: nextYear };
+
+        // Auto-reassign subjects from curriculum for the new semester
+        // Removes subjects from old sem, assigns subjects for new sem
+        try {
+          const userId = results.promoted[0]?.promoted_by ?? null;
+          const autoResult = await autoAssignSubjectsToSection(section_id, {
+            reason: `promote_sem${nextSem}`,
+            changed_by: userId,
+          });
+          results.subjects_auto_assigned = {
+            assigned: autoResult.assigned?.length ?? 0,
+            removed: autoResult.removed?.length ?? 0,
+            updated: autoResult.updated?.length ?? 0,
+            message: autoResult.message,
+          };
+        } catch (autoErr) {
+          results.subject_assign_warning = autoErr.message;
+        }
       } catch (e) {
         results.section_update_error = e.message;
       }
@@ -701,7 +722,7 @@ export const bulkChangeSection = async (student_ids, new_section_id) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 // TEMPLATE + BULK UPLOAD
 // ═══════════════════════════════════════════════════════════════════════════════
-
+import xlsx from "xlsx";
 
 // ── Column definitions (shared between template and parser) ──────
 const STUDENT_COLS = [

@@ -38,3 +38,13 @@ export const downloadTemplate = async (req, res, next) => {
     return res.send(buf);
   } catch (e) { next(e); }
 };
+
+
+export async function restore(req, res) {
+  try {
+    const data = await service.restore(req.params.id);   // replace `service` with actual import
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}

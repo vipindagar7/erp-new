@@ -13,7 +13,7 @@ export const createDepartmentSchema = z.object({
     .nullable(),
 });
 
-export const updateDepartmentSchema = z.object({
+export const updateDepartmentSchema  = z.object({
   name: z
     .string()
     .min(2, "Name must be at least 2 characters")

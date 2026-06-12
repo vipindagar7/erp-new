@@ -1,3 +1,4 @@
+import prisma from "../../utils/prisma.js";
 import * as svc from "./section.service.js";
 
 const ok = (res, data, msg = "OK", status = 200) => res.status(status).json({ success: true, message: msg, data });
@@ -9,7 +10,7 @@ const fail = (res, e, next) => {
 export const getAll = async (req, res, next) => { try { ok(res, await svc.getAllSections(req.validatedData ?? req.query)); } catch (e) { fail(res, e, next); } };
 export const getById = async (req, res, next) => { try { const r = await svc.getSectionById(req.params.id); if (!r) return res.status(404).json({ success: false, message: "Section not found" }); ok(res, r); } catch (e) { fail(res, e, next); } };
 export const create = async (req, res, next) => { try { ok(res, await svc.createSection(req.validatedData), "Section created", 201); } catch (e) { fail(res, e, next); } };
-export const update = async (req, res, next) => { try { ok(res, await svc.updateSection(req.params.id, req.validatedData ?? req.body), "Section updated"); } catch (e) { fail(res, e, next); } };
+export const update = async (req, res, next) => { try { ok(res, await svc.updateSection(req.params.id, req.validatedData ?? req.body, req.user), "Section updated"); } catch (e) { fail(res, e, next); } };
 export const remove = async (req, res, next) => { try { await svc.deleteSection(req.params.id); ok(res, null, "Section deleted"); } catch (e) { fail(res, e, next); } };
 
 export const assignSubjectToSection = async (req, res, next) => {
@@ -80,3 +81,35 @@ export const bulkAssignSubjects = async (req, res, next) => {
     ok(res, results, `${results.created.length} assigned, ${results.updated?.length || 0} updated, ${results.failed.length} failed`);
   } catch (e) { fail(res, e, next); }
 };
+
+export const getSectionHistory = async (req, res, next) => {
+  try {
+    if (!prisma.sectionHistory) return res.json({ success: true, data: [] });
+    const { limit = 100, action } = req.query;
+    const history = await prisma.sectionHistory.findMany({
+      where: {
+        section_id: req.params.id,
+        ...(action && action !== "all" && { action }),
+      },
+      orderBy: { createdAt: "desc" },
+      take: parseInt(limit),
+    });
+    ok(res, history);
+  } catch (e) { fail(res, e, next); }
+};
+
+export const getAllSectionHistory = async (req, res, next) => {
+  try {
+    const data = await svc.getAllSectionHistory(req.query);
+    ok(res, data);
+  } catch (e) { fail(res, e, next); }
+};
+
+export async function restore(req, res) {
+  try {
+    const data = await sectionService.restoreSection(req.params.id);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message });
+  }
+}

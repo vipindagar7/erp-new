@@ -1,6 +1,10 @@
 import bcrypt from "bcrypt";
 import xlsx from "xlsx";
 import prisma from "../../utils/prisma.js";
+import { saveFile, deleteFile, validateImage } from "../../utils/fileStorage.js";
+import { encrypt, decrypt, safeEncrypt, safeDecrypt } from "../../utils/encryption.js";
+import { verifyActionToken, consumeActionToken } from "../otp/otp.service.js";
+
 
 // ── Include ────────────────────────────────────────────────────
 const facultyInclude = {
@@ -50,8 +54,6 @@ export const getAllFaculty = async ({ limit = 200, page = 1, search, dept_id } =
 // ══════════════════════════════════════════════════════════════
 // GET BY ID
 // ══════════════════════════════════════════════════════════════
-export const getFacultyById = (id) =>
-  prisma.faculty.findUnique({ where: { id }, include: facultyInclude });
 
 export const getFacultyByUserId = (user_id) =>
   prisma.faculty.findUnique({ where: { user_id }, include: facultyInclude });
@@ -281,5 +283,289 @@ export const generateTemplate = () => {
   const ws = xlsx.utils.aoa_to_sheet([headers, sample]);
   ws["!cols"] = headers.map((h) => ({ wch: Math.max(h.length + 4, 20) }));
   xlsx.utils.book_append_sheet(wb, ws, "Data");
+  return xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+};
+
+
+// ── Upload faculty photo ──────────────────────────────────────
+export const uploadFacultyPhoto = async (facultyId, file) => {
+  validateImage(file);
+  const faculty = await prisma.faculty.findUnique({ where: { id: facultyId } });
+  if (!faculty) throw Object.assign(new Error("Faculty not found"), { statusCode: 404 });
+
+  // Delete old photo
+  if (faculty.photo_url) deleteFile(faculty.photo_url);
+
+  const { url } = await saveFile(file.buffer, file.originalname, "faculty");
+  return prisma.faculty.update({ where: { id: facultyId }, data: { photo_url: url } });
+};
+
+// ── Update HR fields (salary encrypted) ──────────────────────
+export const updateFacultyHR = async (facultyId, data) => {
+  const {
+    salary, bank_account,
+    salary_grade, bank_name, bank_ifsc, pf_number, esi_number,
+    blood_group, emergency_contact, emergency_phone, emergency_relation,
+    qualification, specialization, experience_years, employee_code,
+    ...rest
+  } = data;
+
+  const updateData = { ...rest };
+
+  // Encrypt sensitive fields
+  if (salary !== undefined) updateData.salary_encrypted = safeEncrypt(salary);
+  if (bank_account !== undefined) updateData.bank_account_encrypted = safeEncrypt(bank_account);
+
+  // Non-sensitive HR fields
+  if (salary_grade !== undefined) updateData.salary_grade = salary_grade;
+  if (bank_name !== undefined) updateData.bank_name = bank_name;
+  if (bank_ifsc !== undefined) updateData.bank_ifsc = bank_ifsc;
+  if (pf_number !== undefined) updateData.pf_number = pf_number;
+  if (esi_number !== undefined) updateData.esi_number = esi_number;
+  if (blood_group !== undefined) updateData.blood_group = blood_group;
+  if (emergency_contact !== undefined) updateData.emergency_contact = emergency_contact;
+  if (emergency_phone !== undefined) updateData.emergency_phone = emergency_phone;
+  if (emergency_relation !== undefined) updateData.emergency_relation = emergency_relation;
+  if (qualification !== undefined) updateData.qualification = qualification;
+  if (specialization !== undefined) updateData.specialization = specialization;
+  if (experience_years !== undefined) updateData.experience_years = Number(experience_years);
+  if (employee_code !== undefined) updateData.employee_code = employee_code;
+
+  return prisma.faculty.update({ where: { id: facultyId }, data: updateData });
+};
+
+// ── Get salary (requires valid action token) ──────────────────
+export const getFacultySalary = async (facultyId, requestingUserId, actionToken) => {
+  const valid = await verifyActionToken(requestingUserId, "salary_view", actionToken);
+  if (!valid) throw Object.assign(new Error("Invalid or expired action token. Please verify OTP again."), { statusCode: 403 });
+
+  const faculty = await prisma.faculty.findUnique({
+    where: { id: facultyId },
+    select: { salary_encrypted: true, salary_grade: true, name: true },
+  });
+  if (!faculty) throw Object.assign(new Error("Not found"), { statusCode: 404 });
+
+  await consumeActionToken(requestingUserId, "salary_view", actionToken);
+
+  return {
+    salary: safeDecrypt(faculty.salary_encrypted),
+    salary_grade: faculty.salary_grade,
+    faculty_name: faculty.name,
+  };
+};
+
+// ── Get bank details (requires valid action token) ────────────
+export const getFacultyBank = async (facultyId, requestingUserId, actionToken) => {
+  const valid = await verifyActionToken(requestingUserId, "bank_view", actionToken);
+  if (!valid) throw Object.assign(new Error("Invalid or expired action token."), { statusCode: 403 });
+
+  const faculty = await prisma.faculty.findUnique({
+    where: { id: facultyId },
+    select: { bank_account_encrypted: true, bank_name: true, bank_ifsc: true, pf_number: true, esi_number: true },
+  });
+  if (!faculty) throw Object.assign(new Error("Not found"), { statusCode: 404 });
+
+  await consumeActionToken(requestingUserId, "bank_view", actionToken);
+
+  return {
+    bank_account: safeDecrypt(faculty.bank_account_encrypted),
+    bank_name: faculty.bank_name,
+    bank_ifsc: faculty.bank_ifsc,
+    pf_number: faculty.pf_number,
+    esi_number: faculty.esi_number,
+  };
+};
+
+// ── Get full faculty by ID (safe — no encrypted fields) ───────
+export const getFacultyById = async (id) => {
+  return prisma.faculty.findUnique({
+    where: { id },
+    include: {
+      user: { select: { id: true, email: true, isBlocked: true, role: true, extra_roles: true, createdAt: true } },
+      department: { select: { id: true, name: true } },
+      subjects: { include: { subject: { select: { id: true, name: true, code: true, category: true } } } },
+      coordinating_sections: {
+        select: {
+          id: true, name: true, semester: true, batch: true,
+          course: { select: { name: true, program: { select: { name: true } } } },
+        },
+      },
+      sectionSubjects: {
+        select: {
+          section: { select: { id: true, name: true, semester: true } },
+          subject: { select: { name: true, code: true } },
+          status: true,
+        },
+        where: { status: "ACTIVE" },
+      },
+    },
+  });
+};
+
+// ── Faculty analytics ─────────────────────────────────────────
+export const getFacultyAnalytics = async () => {
+  const [
+    total, active, blocked,
+    genderStats, deptStats, designationStats,
+    employeeTypeStats, monthlyJoining,
+    subjectLoad, sectionLoad,
+    qualificationStats, experienceStats,
+  ] = await Promise.all([
+    prisma.faculty.count({ where: { deleted_at: null } }),
+    prisma.faculty.count({ where: { deleted_at: null, status: "ACTIVE" } }),
+    prisma.user.count({ where: { isBlocked: true, faculty: { deleted_at: null } } }),
+
+    prisma.faculty.groupBy({ by: ["gender"], where: { deleted_at: null }, _count: true }),
+    prisma.faculty.groupBy({ by: ["dept_id"], where: { deleted_at: null }, _count: true }),
+    prisma.faculty.groupBy({ by: ["designation"], where: { deleted_at: null }, _count: true }),
+    prisma.faculty.groupBy({ by: ["employee_type"], where: { deleted_at: null }, _count: true }),
+
+    // Monthly joining trend
+    prisma.$queryRaw`
+      SELECT TO_CHAR(DATE_TRUNC('month', "joining_date"), 'YYYY-MM') AS month, COUNT(*)::int AS count
+      FROM "Faculty"
+      WHERE "joining_date" IS NOT NULL AND "deleted_at" IS NULL
+      GROUP BY month ORDER BY month ASC
+    `,
+
+    // Subject load per faculty (top 10)
+    prisma.faculty.findMany({
+      where: { deleted_at: null },
+      select: {
+        id: true, name: true, emp_id: true,
+        _count: { select: { subjects: true, sectionSubjects: true } },
+      },
+      orderBy: { subjects: { _count: "desc" } },
+      take: 10,
+    }),
+
+    // Section coordination load
+    prisma.faculty.findMany({
+      where: { deleted_at: null },
+      select: {
+        id: true, name: true,
+        _count: { select: { coordinating_sections: true } },
+      },
+      orderBy: { coordinating_sections: { _count: "desc" } },
+      take: 10,
+    }),
+
+    prisma.faculty.groupBy({ by: ["qualification"], where: { deleted_at: null, qualification: { not: null } }, _count: true }),
+    prisma.faculty.groupBy({ by: ["experience_years"], where: { deleted_at: null, experience_years: { not: null } }, _count: true, orderBy: { experience_years: "asc" } }),
+  ]);
+
+  const depts = await prisma.department.findMany({ select: { id: true, name: true } });
+  const deptMap = Object.fromEntries(depts.map((d) => [d.id, d.name]));
+
+  return {
+    overview: { total, active, blocked, inactive: total - active },
+    gender: genderStats.map((g) => ({ name: g.gender || "Not Specified", value: g._count })),
+    byDept: deptStats.map((d) => ({ name: deptMap[d.dept_id] || "Unknown", faculty: d._count })).sort((a, b) => b.faculty - a.faculty),
+    designation: designationStats.map((d) => ({ name: d.designation || "Not Set", value: d._count })),
+    employeeType: employeeTypeStats.map((e) => ({ name: e.employee_type || "Not Set", value: e._count })),
+    monthlyJoining,
+    subjectLoad: subjectLoad.map((f) => ({ name: f.name, subjects: f._count.subjects, sections: f._count.sectionSubjects })),
+    sectionLoad: sectionLoad.map((f) => ({ name: f.name, sections: f._count.coordinating_sections })),
+    qualification: qualificationStats.map((q) => ({ name: q.qualification, value: q._count })),
+    experience: experienceStats.map((e) => ({ years: e.experience_years, count: e._count })),
+  };
+};
+
+// ── Advanced faculty export ───────────────────────────────────
+export const exportFacultyAdvanced = async (filters = {}) => {
+  const where = { deleted_at: null };
+  if (filters.dept_id) where.dept_id = filters.dept_id;
+
+  const faculty = await prisma.faculty.findMany({
+    where,
+    include: {
+      user: { select: { email: true, isBlocked: true, createdAt: true, role: true } },
+      department: { select: { name: true } },
+      subjects: { include: { subject: { select: { name: true, code: true } } } },
+      coordinating_sections: { select: { name: true, semester: true } },
+    },
+    orderBy: [{ dept_id: "asc" }, { name: "asc" }],
+  });
+
+  const wb = xlsx.utils.book_new();
+
+  // Summary
+  const summaryRows = [
+    ["EIT FARIDABAD — FACULTY EXPORT SUMMARY"],
+    ["Generated On", new Date().toLocaleString("en-IN")],
+    ["Total Faculty", faculty.length],
+    [],
+    ["─── BY DEPARTMENT ───"],
+    ["Department", "Count"],
+  ];
+  const deptCounts = {};
+  faculty.forEach((f) => { const d = f.department?.name || "Unknown"; deptCounts[d] = (deptCounts[d] || 0) + 1; });
+  Object.entries(deptCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => summaryRows.push([k, v]));
+  summaryRows.push([], ["─── BY DESIGNATION ───"], ["Designation", "Count"]);
+  const desCounts = {};
+  faculty.forEach((f) => { const d = f.designation || "Unknown"; desCounts[d] = (desCounts[d] || 0) + 1; });
+  Object.entries(desCounts).sort((a, b) => b[1] - a[1]).forEach(([k, v]) => summaryRows.push([k, v]));
+  const wsSummary = xlsx.utils.aoa_to_sheet(summaryRows);
+  wsSummary["!cols"] = [{ wch: 35 }, { wch: 20 }];
+  xlsx.utils.book_append_sheet(wb, wsSummary, "Summary");
+
+  // All Faculty
+  const HEADERS = [
+    "Name", "First Name", "Last Name", "Emp ID", "Employee Code",
+    "Email", "Phone", "Personal Email",
+    "Gender", "DOB", "Blood Group",
+    "Department", "Designation", "Employee Type", "Status",
+    "Joining Date", "Experience Years",
+    "Qualification", "Specialization",
+    "Salary Grade", "PF Number", "ESI Number",
+    "Bank Name", "IFSC",
+    "Emergency Contact", "Emergency Phone", "Emergency Relation",
+    "Subjects Assigned", "Sections Coordinating",
+    "Aadhar No", "PAN No",
+    "Account Status", "System Role",
+    "Created At",
+  ];
+  const rows = faculty.map((f) => [
+    f.name, f.first_name || "", f.last_name || "",
+    f.emp_id || "", f.employee_code || "",
+    f.user?.email || "", f.phone || "", f.personal_email || "",
+    f.gender || "", f.dob ? new Date(f.dob).toLocaleDateString("en-IN") : "",
+    f.blood_group || "",
+    f.department?.name || "", f.designation || "", f.employee_type || "", f.status || "ACTIVE",
+    f.joining_date ? new Date(f.joining_date).toLocaleDateString("en-IN") : "",
+    f.experience_years || "",
+    f.qualification || "", f.specialization || "",
+    f.salary_grade || "", f.pf_number || "", f.esi_number || "",
+    f.bank_name || "", f.bank_ifsc || "",
+    f.emergency_contact || "", f.emergency_phone || "", f.emergency_relation || "",
+    f.subjects.map((s) => `${s.subject.name} (${s.subject.code})`).join(", "),
+    f.coordinating_sections.map((s) => `${s.name} Sem${s.semester}`).join(", "),
+    f.aadhar_no || "", f.pan_no || "",
+    f.user?.isBlocked ? "Blocked" : "Active",
+    f.user?.role || "",
+    f.user?.createdAt ? new Date(f.user.createdAt).toLocaleDateString("en-IN") : "",
+  ]);
+  const wsAll = xlsx.utils.aoa_to_sheet([HEADERS, ...rows]);
+  wsAll["!cols"] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+  xlsx.utils.book_append_sheet(wb, wsAll, "All Faculty");
+
+  // Per-department sheets
+  const deptGroups = {};
+  faculty.forEach((f) => {
+    const key = f.dept_id || "no-dept";
+    const name = f.department?.name || "Unknown";
+    if (!deptGroups[key]) deptGroups[key] = { name, faculty: [] };
+    deptGroups[key].faculty.push(f);
+  });
+  const usedNames = new Set(["Summary", "All Faculty"]);
+  for (const { name, faculty: df } of Object.values(deptGroups)) {
+    let sheetName = name.replace(/[\\/:*?[\]]/g, "").slice(0, 31);
+    if (usedNames.has(sheetName)) sheetName = sheetName.slice(0, 28) + " 2";
+    usedNames.add(sheetName);
+    const ws = xlsx.utils.aoa_to_sheet([HEADERS, ...df.map((f) => rows[faculty.indexOf(f)])]);
+    ws["!cols"] = HEADERS.map((h) => ({ wch: Math.max(h.length + 2, 14) }));
+    xlsx.utils.book_append_sheet(wb, ws, sheetName);
+  }
+
   return xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
 };

@@ -17,6 +17,8 @@ import { requestLogger } from "./middlewares/request.logger.js";
 ========================================================= */
 
 import authRoutes from "./modules/auth/auth.route.js";
+import sessionRoutes from "./modules/session/session.routes.js";
+
 import auditRoutes from "./modules/audit/audit.routes.js";
 import roleUpgradeRoutes from "./modules/roleUpgrade/role.upgrade.routes.js";
 import studentRoutes from "./modules/student/student.routes.js";
@@ -39,6 +41,12 @@ import settingsRoutes from "./modules/settings/settings.routes.js";
 import reportsRoutes from "./modules/reports/reports.routes.js";
 import groupsRoutes from "./modules/groups/groups.routes.js";
 import { logger } from "./utils/logger.js";
+
+
+import otpRoutes from "./modules/otp/otp.routes.js";
+import erpSettingsRoutes from "./modules/erpSettings/erp.settings.routes.js";
+import { serveUploads } from "./utils/fileStorage.js";
+import { seedDefaultSettings } from "./modules/erpSettings/erp.settings.service.js";
 
 /* =========================================================
    APP
@@ -190,6 +198,8 @@ app.get("/health", (_req, res) => {
 
 app.use("/api/auth", authRoutes);
 
+app.use("/api/sessions", sessionRoutes);
+
 app.use("/api/role-upgrade", roleUpgradeRoutes);
 
 app.use("/api/audit", auditRoutes);
@@ -225,6 +235,12 @@ app.use("/api/students/enrollments", studentEnrollRoutes);
 app.use("/api/groups", groupsRoutes);
 
 app.use("/api/curriculum", curriculumRoutes);
+
+
+app.use("/uploads", serveUploads());
+
+app.use("/api/otp", otpRoutes);
+app.use("/api/erp-settings", erpSettingsRoutes);
 
 
 /* =========================================================
@@ -282,10 +298,11 @@ const startServer = async () => {
     try {
 
         await connectDB();
+        // await seedDefaultSettings();
 
         app.listen(PORT, () => {
             logger.info(`🚀 ERP Backend running on port ${PORT}`);
-            
+
         });
 
     } catch (error) {

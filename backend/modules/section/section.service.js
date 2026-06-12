@@ -1,9 +1,42 @@
 import xlsx from "xlsx";
 import { sectionTemplate, sectionSubjectTemplate } from "../shared/template.helper.js";
 import prisma from "../../utils/prisma.js";
-
+import { getCurrentSessionId } from "../session/session.service.js";
 
 // ── Includes ───────────────────────────────────────────────────
+
+// ── Section history logger ─────────────────────────────────────
+export const logSectionHistory = async ({
+  section_id, action, current, prev = null, changed_by = null, changed_by_name = null, changed_by_role = null, reason = null,
+}) => {
+  try {
+    if (!prisma.sectionHistory) return; // guard before generate
+    const _sessionId = await getCurrentSessionId().catch(() => "DEFAULT-SESSION-0000-0000-000000000001");
+    await prisma.sectionHistory.create({
+      data: {
+        session_id: _sessionId,
+        section_id,
+        action,
+        semester: current.semester,
+        status: current.status || "ACTIVE",
+        batch: current.batch,
+        academic_year: current.academic_year ?? null,
+        class_coordinator_id: current.class_coordinator_id ?? null,
+        coordinator_name: current.class_coordinator?.name ?? null,
+        prev_semester: prev?.semester ?? null,
+        prev_status: prev?.status ?? null,
+        prev_batch: prev?.batch ?? null,
+        prev_class_coordinator_id: prev?.class_coordinator_id ?? null,
+        prev_coordinator_name: prev?.class_coordinator?.name ?? null,
+        changed_by,
+        changed_by_name,
+        changed_by_role,
+        reason,
+      },
+    });
+  } catch (e) { console.error("[section] history log failed:", e.message); }
+};
+
 const STATUS_SORT = { ACTIVE: 0, COMPLETED: 1, ARCHIVED: 2, ALUMNI: 3, SUSPENDED: 4 };
 
 const sectionInclude = {
@@ -70,8 +103,8 @@ export const getAllSections = async ({
 export const getSectionById = (id) =>
   prisma.section.findUnique({ where: { id }, include: sectionInclude });
 
-export const createSection = (data) =>
-  prisma.section.create({
+export const createSection = async (data, user = null) => {
+  const section = await prisma.section.create({
     data: {
       name: data.name,
       course_id: data.course_id,
@@ -83,9 +116,17 @@ export const createSection = (data) =>
     },
     include: sectionInclude,
   });
+  await logSectionHistory({
+    section_id: section.id, action: "CREATED", current: section,
+    changed_by: user?.id, changed_by_name: user?.email, changed_by_role: user?.role,
+  });
+  return section;
+};
 
-export const updateSection = (id, data) => {
-  // Only include fields that are explicitly provided — safe for partial updates (status-only, etc.)
+export const updateSection = async (id, data, user = null) => {
+  // Capture prev state for history
+  const prev = await prisma.section.findUnique({ where: { id }, include: { class_coordinator: { select: { name: true } } } });
+
   const update = {};
   if (data.name !== undefined) update.name = data.name;
   if (data.course_id !== undefined) update.course_id = data.course_id;
@@ -94,7 +135,23 @@ export const updateSection = (id, data) => {
   if (data.status !== undefined) update.status = data.status;
   if (data.room_no !== undefined) update.room_no = data.room_no || null;
   if (data.class_coordinator_id !== undefined) update.class_coordinator_id = data.class_coordinator_id || null;
-  return prisma.section.update({ where: { id }, data: update, include: sectionInclude });
+
+  const section = await prisma.section.update({ where: { id }, data: update, include: sectionInclude });
+
+  // Determine what changed for history action label
+  let action = "UPDATED";
+  if (prev && data.status !== undefined && data.status !== prev.status) action = "STATUS_CHANGED";
+  if (prev && data.semester !== undefined && data.semester !== prev.semester) action = "SEMESTER_CHANGED";
+  if (prev && data.class_coordinator_id !== undefined &&
+    data.class_coordinator_id !== prev.class_coordinator_id) action = "COORDINATOR_CHANGED";
+  if (prev && data.batch !== undefined && data.batch !== prev.batch) action = "BATCH_CHANGED";
+
+  await logSectionHistory({
+    section_id: id, action, current: section, prev,
+    changed_by: user?.id, changed_by_name: user?.email, changed_by_role: user?.role,
+  });
+
+  return section;
 };
 
 export const deleteSection = async (id) => {
@@ -233,7 +290,7 @@ export const bulkAssignSubjects = async (buffer) => {
   const allSections = await prisma.section.findMany({
     select: { id: true, name: true, semester: true, course: { select: { name: true, program: { select: { name: true } } } } },
   });
-  // Map each sheet name to a section (match on sheet name = generated template sheet name)
+  // Navigation each sheet name to a section (match on sheet name = generated template sheet name)
   const usedNames = new Set();
   const safeSheet = (sec) => {
     const prog = sec.course?.program?.name || "";
@@ -419,3 +476,46 @@ export const getSectionStudentCounts = async (section_ids) => {
 
 export const getSectionTemplate = sectionTemplate;
 export const getSectionSubjectTemplate = sectionSubjectTemplate;
+
+// ── All section history (paginated) ──────────────────────────
+export const getAllSectionHistory = async ({ page = 1, limit = 50, action, section_id, search, date_from, date_to } = {}) => {
+  if (!prisma.sectionHistory) return { history: [], total: 0 };
+
+  const where = {
+    ...(action && action !== "all" && { action }),
+    ...(section_id && section_id !== "all" && { section_id }),
+    ...(date_from && { createdAt: { gte: new Date(date_from) } }),
+    ...(date_to && { createdAt: { ...(date_from ? { gte: new Date(date_from) } : {}), lte: new Date(date_to + "T23:59:59") } }),
+    ...(search && {
+      OR: [
+        { changed_by_name: { contains: search, mode: "insensitive" } },
+        { reason: { contains: search, mode: "insensitive" } },
+        { section: { name: { contains: search, mode: "insensitive" } } },
+        { section: { course: { name: { contains: search, mode: "insensitive" } } } },
+      ],
+    }),
+  };
+
+  const _page = parseInt(page) || 1;
+  const _limit = Math.min(parseInt(limit) || 50, 200);
+
+  const [total, history] = await Promise.all([
+    prisma.sectionHistory.count({ where }),
+    prisma.sectionHistory.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (_page - 1) * _limit,
+      take: _limit,
+      include: {
+        section: {
+          select: {
+            id: true, name: true, semester: true, batch: true, status: true,
+            course: { select: { name: true, program: { select: { name: true } } } },
+          },
+        },
+      },
+    }),
+  ]);
+
+  return { history, total, page: _page, limit: _limit, pages: Math.ceil(total / _limit) };
+};
