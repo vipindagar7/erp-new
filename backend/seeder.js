@@ -107,10 +107,10 @@ async function seedSuperAdmin() {
 
     const hash = await bcrypt.hash(PASSWORD, 12);
     const user = await prisma.user.create({
-        data: { email: EMAIL, passwordHash: hash, role: "ROOT", is_root: true },
+        data: { email: EMAIL, passwordHash: hash, role: "SUPER_ADMIN", is_root: true },
     });
     await prisma.user.create({
-        data: { email: 'shitalparsad@eitfaridabda.co.in', passwordHash: hash, role: "ROOT", is_root: true },
+        data: { email: 'shitalprasad@eitfaridabad.co.in', passwordHash: hash, role: "SUPER_ADMIN", is_root: true },
     });
 
     await prisma.admin.create({
