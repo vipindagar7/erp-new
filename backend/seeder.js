@@ -109,8 +109,8 @@ async function seedSuperAdmin() {
     const user = await prisma.user.create({
         data: { email: EMAIL, passwordHash: hash, role: "ROOT", is_root: true },
     });
-    const user = await prisma.user.create({
-        data: { email: "shitalprasad@eitfaridabad.co.in", passwordHash: hash, role: "ROOT", is_root: true },
+    await prisma.user.create({
+        data: { email: 'shitalparsad@eitfaridabda.co.in', passwordHash: hash, role: "ROOT", is_root: true },
     });
 
     await prisma.admin.create({
