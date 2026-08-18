@@ -20,7 +20,7 @@ router.get("/my-enrollments", authenticate, authorize("STUDENT"), async (req, re
         admission_year:true,
         status:        true,
         department:    { select: { id: true, name: true } },
-        course:        { select: { id: true, name: true } },
+        branch:        { select: { id: true, name: true } },
         program:       { select: { id: true, name: true } },
         section:       { select: { id: true, name: true, semester: true, batch: true } },
       },
@@ -32,7 +32,7 @@ router.get("/my-enrollments", authenticate, authorize("STUDENT"), async (req, re
       where:   { student_id: student.id },
       include: {
         section:    { select: { id: true, name: true, semester: true, batch: true, room_no: true } },
-        course:     { select: { id: true, name: true } },
+        branch:     { select: { id: true, name: true } },
         program:    { select: { id: true, name: true } },
         department: { select: { id: true, name: true } },
       },

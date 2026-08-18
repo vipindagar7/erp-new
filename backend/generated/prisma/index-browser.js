@@ -7,7 +7,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 
 const {
   Decimal,
-  objectEnumValues,
+  DbNull,
+  JsonNull,
+  AnyNull,
+  NullTypes,
   makeStrictEnum,
   Public,
   getRuntime,
@@ -21,12 +24,12 @@ exports.Prisma = Prisma
 exports.$Enums = {}
 
 /**
- * Prisma Client JS version: 6.19.3
- * Query Engine version: c2990dca591cba766e3b7ef5d9e8a84796e47ab7
+ * Prisma Client JS version: 7.8.0
+ * Query Engine version: 3c6e192761c0362d496ed980de936e2f3cebcd3a
  */
 Prisma.prismaVersion = {
-  client: "6.19.3",
-  engine: "c2990dca591cba766e3b7ef5d9e8a84796e47ab7"
+  client: "7.8.0",
+  engine: "3c6e192761c0362d496ed980de936e2f3cebcd3a"
 }
 
 Prisma.PrismaClientKnownRequestError = () => {
@@ -98,15 +101,11 @@ In case this error is unexpected for you, please report it in https://pris.ly/pr
 /**
  * Shorthand utilities for JSON filtering
  */
-Prisma.DbNull = objectEnumValues.instances.DbNull
-Prisma.JsonNull = objectEnumValues.instances.JsonNull
-Prisma.AnyNull = objectEnumValues.instances.AnyNull
+Prisma.DbNull = DbNull
+Prisma.JsonNull = JsonNull
+Prisma.AnyNull = AnyNull
 
-Prisma.NullTypes = {
-  DbNull: objectEnumValues.classes.DbNull,
-  JsonNull: objectEnumValues.classes.JsonNull,
-  AnyNull: objectEnumValues.classes.AnyNull
-}
+Prisma.NullTypes = NullTypes
 
 
 
@@ -171,6 +170,25 @@ exports.Prisma.UserPermissionScalarFieldEnum = {
   expires_at: 'expires_at'
 };
 
+exports.Prisma.UserScalarFieldEnum = {
+  id: 'id',
+  email: 'email',
+  passwordHash: 'passwordHash',
+  isBlocked: 'isBlocked',
+  active_role_id: 'active_role_id',
+  is_root: 'is_root',
+  must_change_password: 'must_change_password',
+  pin_hash: 'pin_hash',
+  pin_set_at: 'pin_set_at',
+  requires_2fa: 'requires_2fa',
+  first_login_completed: 'first_login_completed',
+  role: 'role',
+  permissions: 'permissions',
+  extra_roles: 'extra_roles',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
 exports.Prisma.UserSessionScalarFieldEnum = {
   id: 'id',
   user_id: 'user_id',
@@ -184,6 +202,8 @@ exports.Prisma.UserSessionScalarFieldEnum = {
   os: 'os',
   location: 'location',
   is_active: 'is_active',
+  is_locked: 'is_locked',
+  locked_at: 'locked_at',
   last_active_at: 'last_active_at',
   expires_at: 'expires_at',
   refresh_expires_at: 'refresh_expires_at',
@@ -208,54 +228,6 @@ exports.Prisma.LoginHistoryScalarFieldEnum = {
   createdAt: 'createdAt'
 };
 
-exports.Prisma.OtpTokenScalarFieldEnum = {
-  id: 'id',
-  user_id: 'user_id',
-  purpose: 'purpose',
-  otp_hash: 'otp_hash',
-  attempts: 'attempts',
-  used: 'used',
-  expires_at: 'expires_at',
-  createdAt: 'createdAt'
-};
-
-exports.Prisma.UserTotpScalarFieldEnum = {
-  id: 'id',
-  user_id: 'user_id',
-  secret: 'secret',
-  is_enabled: 'is_enabled',
-  verified: 'verified',
-  created_at: 'created_at',
-  updated_at: 'updated_at'
-};
-
-exports.Prisma.ErpSettingScalarFieldEnum = {
-  id: 'id',
-  key: 'key',
-  value: 'value',
-  label: 'label',
-  description: 'description',
-  category: 'category',
-  data_type: 'data_type',
-  is_system: 'is_system',
-  updated_by: 'updated_by',
-  updatedAt: 'updatedAt',
-  createdAt: 'createdAt'
-};
-
-exports.Prisma.UserScalarFieldEnum = {
-  id: 'id',
-  email: 'email',
-  passwordHash: 'passwordHash',
-  isBlocked: 'isBlocked',
-  active_role_id: 'active_role_id',
-  role: 'role',
-  permissions: 'permissions',
-  extra_roles: 'extra_roles',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
 exports.Prisma.PasswordResetTokenScalarFieldEnum = {
   id: 'id',
   token: 'token',
@@ -275,6 +247,7 @@ exports.Prisma.AdminScalarFieldEnum = {
 
 exports.Prisma.AcademicSessionScalarFieldEnum = {
   id: 'id',
+  code: 'code',
   name: 'name',
   label: 'label',
   start_date: 'start_date',
@@ -289,7 +262,13 @@ exports.Prisma.AcademicSessionScalarFieldEnum = {
 
 exports.Prisma.DepartmentScalarFieldEnum = {
   id: 'id',
+  code: 'code',
   name: 'name',
+  hod_id: 'hod_id',
+  description: 'description',
+  website: 'website',
+  phone: 'phone',
+  established_year: 'established_year',
   deleted_at: 'deleted_at',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -297,17 +276,34 @@ exports.Prisma.DepartmentScalarFieldEnum = {
 
 exports.Prisma.ProgramScalarFieldEnum = {
   id: 'id',
+  code: 'code',
   name: 'name',
   dept_id: 'dept_id',
+  max_semesters: 'max_semesters',
+  duration_years: 'duration_years',
+  degree_type: 'degree_type',
+  accreditation: 'accreditation',
+  intake_capacity: 'intake_capacity',
+  description: 'description',
   deleted_at: 'deleted_at',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
 };
 
-exports.Prisma.CourseScalarFieldEnum = {
+exports.Prisma.BranchScalarFieldEnum = {
   id: 'id',
+  code: 'code',
   name: 'name',
   program_id: 'program_id',
+  description: 'description',
+  intake_capacity: 'intake_capacity',
+  total_semesters_override: 'total_semesters_override',
+  has_combined_first_year: 'has_combined_first_year',
+  start_session: 'start_session',
+  end_session: 'end_session',
+  discontinued_at: 'discontinued_at',
+  discontinued_reason: 'discontinued_reason',
+  discontinued_by: 'discontinued_by',
   deleted_at: 'deleted_at',
   createdAt: 'createdAt',
   updatedAt: 'updatedAt'
@@ -326,14 +322,35 @@ exports.Prisma.SubjectScalarFieldEnum = {
 
 exports.Prisma.SectionScalarFieldEnum = {
   id: 'id',
+  code: 'code',
   name: 'name',
-  course_id: 'course_id',
+  branch_id: 'branch_id',
   semester: 'semester',
   batch: 'batch',
+  batch_year: 'batch_year',
+  academic_year: 'academic_year',
+  is_combined: 'is_combined',
   class_coordinator_id: 'class_coordinator_id',
   status: 'status',
+  capacity: 'capacity',
+  description: 'description',
   room_no: 'room_no',
-  deleted_at: 'deleted_at'
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.StudentSectionHistoryScalarFieldEnum = {
+  id: 'id',
+  student_id: 'student_id',
+  from_section_id: 'from_section_id',
+  to_section_id: 'to_section_id',
+  from_section_code: 'from_section_code',
+  to_section_code: 'to_section_code',
+  reason: 'reason',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.SectionSubjectScalarFieldEnum = {
@@ -352,6 +369,7 @@ exports.Prisma.SectionSubjectHistoryScalarFieldEnum = {
   section_id: 'section_id',
   subject_id: 'subject_id',
   faculty_id: 'faculty_id',
+  facultyId: 'facultyId',
   action: 'action',
   reason: 'reason',
   prev_data: 'prev_data',
@@ -376,6 +394,8 @@ exports.Prisma.SectionHistoryScalarFieldEnum = {
   prev_batch: 'prev_batch',
   prev_class_coordinator_id: 'prev_class_coordinator_id',
   prev_coordinator_name: 'prev_coordinator_name',
+  prev_subjects: 'prev_subjects',
+  new_subjects: 'new_subjects',
   changed_by: 'changed_by',
   changed_by_name: 'changed_by_name',
   changed_by_role: 'changed_by_role',
@@ -385,11 +405,13 @@ exports.Prisma.SectionHistoryScalarFieldEnum = {
 
 exports.Prisma.StudentScalarFieldEnum = {
   id: 'id',
+  code: 'code',
   user_id: 'user_id',
   name: 'name',
   first_name: 'first_name',
   last_name: 'last_name',
   roll_no: 'roll_no',
+  university_roll_no: 'university_roll_no',
   enrollment_no: 'enrollment_no',
   dob: 'dob',
   gender: 'gender',
@@ -406,9 +428,9 @@ exports.Prisma.StudentScalarFieldEnum = {
   state: 'state',
   pincode: 'pincode',
   dept_id: 'dept_id',
-  section_id: 'section_id',
-  course_id: 'course_id',
   program_id: 'program_id',
+  branch_id: 'branch_id',
+  section_id: 'section_id',
   status: 'status',
   aadhar_no: 'aadhar_no',
   category: 'category',
@@ -420,7 +442,38 @@ exports.Prisma.StudentScalarFieldEnum = {
   group_no: 'group_no',
   deleted_at: 'deleted_at',
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  blood_group: 'blood_group',
+  photo_url: 'photo_url',
+  emergency_contact: 'emergency_contact',
+  emergency_phone: 'emergency_phone',
+  emergency_relation: 'emergency_relation',
+  father_aadhar: 'father_aadhar',
+  mother_aadhar: 'mother_aadhar',
+  father_occupation: 'father_occupation',
+  mother_occupation: 'mother_occupation',
+  tenth_percentage: 'tenth_percentage',
+  twelfth_percentage: 'twelfth_percentage',
+  lateral_entry: 'lateral_entry',
+  is_alumni: 'is_alumni',
+  is_hosteller: 'is_hosteller',
+  is_using_transport: 'is_using_transport',
+  alt_contact_number: 'alt_contact_number',
+  biometric_id: 'biometric_id',
+  nick_name: 'nick_name',
+  admission_date: 'admission_date'
+};
+
+exports.Prisma.StudentHistoryScalarFieldEnum = {
+  id: 'id',
+  student_id: 'student_id',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  action: 'action',
+  changed_fields: 'changed_fields',
+  prev_data: 'prev_data',
+  new_data: 'new_data',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.StudentSubjectScalarFieldEnum = {
@@ -438,47 +491,18 @@ exports.Prisma.StudentEnrollmentScalarFieldEnum = {
   semester: 'semester',
   batch_year: 'batch_year',
   dept_id: 'dept_id',
-  course_id: 'course_id',
   program_id: 'program_id',
+  branch_id: 'branch_id',
   status: 'status',
   is_current: 'is_current',
   enrolled_at: 'enrolled_at',
   completed_at: 'completed_at',
-  remarks: 'remarks'
-};
-
-exports.Prisma.SpecialGroupScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  description: 'description',
-  type: 'type',
-  created_by: 'created_by',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.SpecialGroupMemberScalarFieldEnum = {
-  id: 'id',
-  group_id: 'group_id',
-  student_id: 'student_id',
-  addedAt: 'addedAt'
-};
-
-exports.Prisma.FacultyGroupScalarFieldEnum = {
-  id: 'id',
-  name: 'name',
-  description: 'description',
-  type: 'type',
-  created_by: 'created_by',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
-exports.Prisma.FacultyGroupMemberScalarFieldEnum = {
-  id: 'id',
-  group_id: 'group_id',
-  faculty_id: 'faculty_id',
-  addedAt: 'addedAt'
+  remarks: 'remarks',
+  promoted_from_section_id: 'promoted_from_section_id',
+  promoted_to_section_id: 'promoted_to_section_id',
+  promoted_by: 'promoted_by',
+  promoted_at: 'promoted_at',
+  demotion_reason: 'demotion_reason'
 };
 
 exports.Prisma.FacultyScalarFieldEnum = {
@@ -488,19 +512,13 @@ exports.Prisma.FacultyScalarFieldEnum = {
   first_name: 'first_name',
   last_name: 'last_name',
   emp_id: 'emp_id',
+  employee_code: 'employee_code',
   designation: 'designation',
   phone: 'phone',
   dept_id: 'dept_id',
   dob: 'dob',
   gender: 'gender',
   joining_date: 'joining_date',
-  aadhar_no: 'aadhar_no',
-  category: 'category',
-  employee_type: 'employee_type',
-  nick_name: 'nick_name',
-  pan_no: 'pan_no',
-  personal_email: 'personal_email',
-  religion: 'religion',
   status: 'status',
   deleted_at: 'deleted_at',
   createdAt: 'createdAt',
@@ -510,23 +528,287 @@ exports.Prisma.FacultyScalarFieldEnum = {
   emergency_contact: 'emergency_contact',
   emergency_phone: 'emergency_phone',
   emergency_relation: 'emergency_relation',
+  aadhar_no: 'aadhar_no',
+  category: 'category',
+  pan_no: 'pan_no',
+  personal_email: 'personal_email',
+  religion: 'religion',
+  nick_name: 'nick_name',
   qualification: 'qualification',
   specialization: 'specialization',
   experience_years: 'experience_years',
-  employee_code: 'employee_code',
+  employee_type: 'employee_type',
   salary_grade: 'salary_grade',
   salary_encrypted: 'salary_encrypted',
   bank_account_encrypted: 'bank_account_encrypted',
   bank_name: 'bank_name',
   bank_ifsc: 'bank_ifsc',
   pf_number: 'pf_number',
-  esi_number: 'esi_number'
+  esi_number: 'esi_number',
+  is_teaching: 'is_teaching',
+  address: 'address',
+  city: 'city',
+  state: 'state',
+  pincode: 'pincode',
+  retirement_date: 'retirement_date',
+  resignation_date: 'resignation_date',
+  exit_reason: 'exit_reason',
+  lives_on_campus: 'lives_on_campus',
+  accommodation_type: 'accommodation_type',
+  campus_quarter_no: 'campus_quarter_no',
+  campus_address: 'campus_address',
+  subject_pref_1: 'subject_pref_1',
+  subject_pref_2: 'subject_pref_2',
+  erp_role: 'erp_role',
+  biometric_device_id: 'biometric_device_id',
+  primary_role_id: 'primary_role_id',
+  secondary_role_id: 'secondary_role_id',
+  basic_salary: 'basic_salary'
+};
+
+exports.Prisma.FacultyCareerHistoryScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  action: 'action',
+  prev_value: 'prev_value',
+  new_value: 'new_value',
+  prev_designation: 'prev_designation',
+  new_designation: 'new_designation',
+  prev_salary_grade: 'prev_salary_grade',
+  new_salary_grade: 'new_salary_grade',
+  prev_dept_id: 'prev_dept_id',
+  new_dept_id: 'new_dept_id',
+  prev_status: 'prev_status',
+  new_status: 'new_status',
+  changed_fields: 'changed_fields',
+  prev_data: 'prev_data',
+  new_data: 'new_data',
+  effective_date: 'effective_date',
+  reason: 'reason',
+  documents: 'documents',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  createdAt: 'createdAt'
 };
 
 exports.Prisma.FacultySubjectScalarFieldEnum = {
   id: 'id',
   faculty_id: 'faculty_id',
   subject_id: 'subject_id'
+};
+
+exports.Prisma.LeaveRequestScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  leave_type: 'leave_type',
+  from_date: 'from_date',
+  to_date: 'to_date',
+  total_days: 'total_days',
+  reason: 'reason',
+  documents: 'documents',
+  status: 'status',
+  current_level: 'current_level',
+  remarks: 'remarks',
+  rejection_reason: 'rejection_reason',
+  cancelled_by: 'cancelled_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveApprovalFlowScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  chain: 'chain',
+  created_by: 'created_by',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.UIPermissionScalarFieldEnum = {
+  id: 'id',
+  module: 'module',
+  action: 'action',
+  role: 'role',
+  is_hidden: 'is_hidden',
+  is_disabled: 'is_disabled',
+  updated_by: 'updated_by',
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.SpecialGroupScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  description: 'description',
+  type: 'type',
+  created_by: 'created_by',
+  head_id: 'head_id',
+  is_active: 'is_active',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SpecialGroupMemberScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  student_id: 'student_id',
+  role: 'role',
+  addedAt: 'addedAt',
+  addedBy: 'addedBy'
+};
+
+exports.Prisma.FacultyGroupScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  description: 'description',
+  type: 'type',
+  created_by: 'created_by',
+  head_id: 'head_id',
+  is_active: 'is_active',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.FacultyGroupMemberScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  faculty_id: 'faculty_id',
+  role: 'role',
+  addedAt: 'addedAt',
+  addedBy: 'addedBy'
+};
+
+exports.Prisma.GroupAnnouncementScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  posted_by: 'posted_by',
+  title: 'title',
+  body: 'body',
+  priority: 'priority',
+  is_pinned: 'is_pinned',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.GroupAttendanceRequestScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  requested_by: 'requested_by',
+  event_name: 'event_name',
+  event_date: 'event_date',
+  from_time: 'from_time',
+  to_time: 'to_time',
+  venue: 'venue',
+  reason: 'reason',
+  status: 'status',
+  approved_by: 'approved_by',
+  approved_at: 'approved_at',
+  remarks: 'remarks',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.GroupTaskScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  created_by: 'created_by',
+  title: 'title',
+  description: 'description',
+  due_date: 'due_date',
+  priority: 'priority',
+  status: 'status',
+  assigned_to: 'assigned_to',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.GroupPollScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  created_by: 'created_by',
+  question: 'question',
+  poll_type: 'poll_type',
+  ends_at: 'ends_at',
+  is_anonymous: 'is_anonymous',
+  is_active: 'is_active',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.GroupPollChoiceScalarFieldEnum = {
+  id: 'id',
+  poll_id: 'poll_id',
+  text: 'text',
+  order: 'order'
+};
+
+exports.Prisma.GroupPollResponseScalarFieldEnum = {
+  id: 'id',
+  poll_id: 'poll_id',
+  choice_id: 'choice_id',
+  student_id: 'student_id',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.GroupFileScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  uploaded_by: 'uploaded_by',
+  file_name: 'file_name',
+  file_url: 'file_url',
+  file_size: 'file_size',
+  file_type: 'file_type',
+  description: 'description',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.GroupNoticeScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  posted_by: 'posted_by',
+  title: 'title',
+  body: 'body',
+  effective_from: 'effective_from',
+  effective_to: 'effective_to',
+  is_mandatory: 'is_mandatory',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.GroupRoomBookingScalarFieldEnum = {
+  id: 'id',
+  group_id: 'group_id',
+  requested_by: 'requested_by',
+  room_name: 'room_name',
+  booking_date: 'booking_date',
+  from_time: 'from_time',
+  to_time: 'to_time',
+  purpose: 'purpose',
+  expected_count: 'expected_count',
+  status: 'status',
+  approved_by: 'approved_by',
+  approved_at: 'approved_at',
+  rejection_reason: 'rejection_reason',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.CurriculumSubjectScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  program_id: 'program_id',
+  branch_id: 'branch_id',
+  semester: 'semester',
+  subject_id: 'subject_id',
+  type: 'type',
+  is_core: 'is_core',
+  credits: 'credits',
+  order: 'order',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 };
 
 exports.Prisma.FeedbackCategoryScalarFieldEnum = {
@@ -560,7 +842,7 @@ exports.Prisma.FeedbackFormScalarFieldEnum = {
   section_id: 'section_id',
   all_students: 'all_students',
   batch_year: 'batch_year',
-  course_id: 'course_id',
+  program_id: 'program_id',
   department_id: 'department_id',
   group_id: 'group_id',
   specialGroupId: 'specialGroupId',
@@ -591,9 +873,9 @@ exports.Prisma.FeedbackResponseScalarFieldEnum = {
   submittedAt: 'submittedAt',
   snap_academic_year: 'snap_academic_year',
   snap_batch: 'snap_batch',
-  snap_course_name: 'snap_course_name',
-  snap_dept_name: 'snap_dept_name',
   snap_program_name: 'snap_program_name',
+  snap_branch_name: 'snap_branch_name',
+  snap_dept_name: 'snap_dept_name',
   snap_section_name: 'snap_section_name',
   snap_semester: 'snap_semester'
 };
@@ -618,21 +900,6 @@ exports.Prisma.NotificationScalarFieldEnum = {
   created_at: 'created_at'
 };
 
-exports.Prisma.CurriculumSubjectScalarFieldEnum = {
-  id: 'id',
-  session_id: 'session_id',
-  program_id: 'program_id',
-  course_id: 'course_id',
-  semester: 'semester',
-  subject_id: 'subject_id',
-  type: 'type',
-  is_core: 'is_core',
-  credits: 'credits',
-  order: 'order',
-  createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
-};
-
 exports.Prisma.AuditLogScalarFieldEnum = {
   id: 'id',
   user_id: 'user_id',
@@ -647,13 +914,1211 @@ exports.Prisma.AuditLogScalarFieldEnum = {
   changed_fields: 'changed_fields',
   ip: 'ip',
   user_agent: 'user_agent',
-  browser: 'browser',
-  os: 'os',
-  device_type: 'device_type',
   reversible: 'reversible',
   restored_at: 'restored_at',
   restored_by: 'restored_by',
   createdAt: 'createdAt'
+};
+
+exports.Prisma.OtpTokenScalarFieldEnum = {
+  id: 'id',
+  user_id: 'user_id',
+  purpose: 'purpose',
+  otp_hash: 'otp_hash',
+  attempts: 'attempts',
+  used: 'used',
+  expires_at: 'expires_at',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ErpSettingScalarFieldEnum = {
+  id: 'id',
+  key: 'key',
+  value: 'value',
+  label: 'label',
+  description: 'description',
+  category: 'category',
+  data_type: 'data_type',
+  is_system: 'is_system',
+  updated_by: 'updated_by',
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.UserTotpScalarFieldEnum = {
+  id: 'id',
+  user_id: 'user_id',
+  secret: 'secret',
+  is_enabled: 'is_enabled',
+  verified: 'verified',
+  created_at: 'created_at',
+  updated_at: 'updated_at'
+};
+
+exports.Prisma.AcademicPeriodScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  type: 'type',
+  label: 'label',
+  start_date: 'start_date',
+  end_date: 'end_date',
+  order: 'order',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.DepartmentHistoryScalarFieldEnum = {
+  id: 'id',
+  dept_id: 'dept_id',
+  action: 'action',
+  changed_fields: 'changed_fields',
+  prev_data: 'prev_data',
+  new_data: 'new_data',
+  reason: 'reason',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  changed_by_role: 'changed_by_role',
+  is_rollback: 'is_rollback',
+  rolled_back_to: 'rolled_back_to',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ProgramHistoryScalarFieldEnum = {
+  id: 'id',
+  program_id: 'program_id',
+  action: 'action',
+  changed_fields: 'changed_fields',
+  prev_data: 'prev_data',
+  new_data: 'new_data',
+  reason: 'reason',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  changed_by_role: 'changed_by_role',
+  is_rollback: 'is_rollback',
+  rolled_back_to: 'rolled_back_to',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.BranchHistoryScalarFieldEnum = {
+  id: 'id',
+  branch_id: 'branch_id',
+  action: 'action',
+  changed_fields: 'changed_fields',
+  prev_data: 'prev_data',
+  new_data: 'new_data',
+  reason: 'reason',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  changed_by_role: 'changed_by_role',
+  is_rollback: 'is_rollback',
+  rolled_back_to: 'rolled_back_to',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.SectionSnapshotScalarFieldEnum = {
+  id: 'id',
+  section_id: 'section_id',
+  section_code: 'section_code',
+  trigger: 'trigger',
+  triggered_by: 'triggered_by',
+  triggered_by_name: 'triggered_by_name',
+  section_data: 'section_data',
+  students_data: 'students_data',
+  enrollments_data: 'enrollments_data',
+  subjects_data: 'subjects_data',
+  from_semester: 'from_semester',
+  to_semester: 'to_semester',
+  from_session: 'from_session',
+  to_session: 'to_session',
+  reason: 'reason',
+  notes: 'notes',
+  rolled_back_at: 'rolled_back_at',
+  rolled_back_by: 'rolled_back_by',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.EnrollmentHistoryScalarFieldEnum = {
+  id: 'id',
+  enrollment_id: 'enrollment_id',
+  student_id: 'student_id',
+  section_id: 'section_id',
+  session_id: 'session_id',
+  action: 'action',
+  from_semester: 'from_semester',
+  to_semester: 'to_semester',
+  from_status: 'from_status',
+  to_status: 'to_status',
+  from_section_id: 'from_section_id',
+  to_section_id: 'to_section_id',
+  from_section_code: 'from_section_code',
+  to_section_code: 'to_section_code',
+  from_session: 'from_session',
+  to_session: 'to_session',
+  prev_data: 'prev_data',
+  new_data: 'new_data',
+  reason: 'reason',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  changed_by_role: 'changed_by_role',
+  is_rollback: 'is_rollback',
+  rolled_back_to: 'rolled_back_to',
+  snapshot_id: 'snapshot_id',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.RoomScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  code: 'code',
+  type: 'type',
+  capacity: 'capacity',
+  floor: 'floor',
+  block: 'block',
+  description: 'description',
+  is_active: 'is_active',
+  dept_id: 'dept_id',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.RoomSubjectScalarFieldEnum = {
+  id: 'id',
+  room_id: 'room_id',
+  subject_id: 'subject_id'
+};
+
+exports.Prisma.RoomStaffScalarFieldEnum = {
+  id: 'id',
+  room_id: 'room_id',
+  user_id: 'user_id',
+  role: 'role',
+  createdAt: 'createdAt',
+  facultyId: 'facultyId'
+};
+
+exports.Prisma.PeriodConfigScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  name: 'name',
+  type: 'type',
+  start_time: 'start_time',
+  end_time: 'end_time',
+  order: 'order',
+  days: 'days',
+  is_active: 'is_active',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.TimetableScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  section_id: 'section_id',
+  dept_id: 'dept_id',
+  status: 'status',
+  locked: 'locked',
+  locked_by: 'locked_by',
+  locked_at: 'locked_at',
+  generated_at: 'generated_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TimetableEntryScalarFieldEnum = {
+  id: 'id',
+  timetable_id: 'timetable_id',
+  period_config_id: 'period_config_id',
+  day: 'day',
+  subject_id: 'subject_id',
+  faculty_id: 'faculty_id',
+  room_id: 'room_id',
+  entry_type: 'entry_type',
+  notes: 'notes',
+  is_combined: 'is_combined',
+  combined_section_id: 'combined_section_id',
+  combined_label: 'combined_label',
+  span_periods: 'span_periods',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SubstitutionScalarFieldEnum = {
+  id: 'id',
+  entry_id: 'entry_id',
+  date: 'date',
+  original_faculty_id: 'original_faculty_id',
+  substitute_faculty_id: 'substitute_faculty_id',
+  status: 'status',
+  reason: 'reason',
+  leave_id: 'leave_id',
+  requested_at: 'requested_at',
+  responded_at: 'responded_at',
+  response_note: 'response_note',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.FacultyWorkloadScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  faculty_id: 'faculty_id',
+  subject_id: 'subject_id',
+  section_id: 'section_id',
+  weekly_hours: 'weekly_hours',
+  preferred_days: 'preferred_days',
+  preferred_periods: 'preferred_periods',
+  room_id: 'room_id',
+  entry_type: 'entry_type',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.LeaveTypeScalarFieldEnum = {
+  id: 'id',
+  code: 'code',
+  name: 'name',
+  applicable_to: 'applicable_to',
+  max_days_per_year: 'max_days_per_year',
+  carry_forward: 'carry_forward',
+  carry_forward_max: 'carry_forward_max',
+  is_paid: 'is_paid',
+  requires_document: 'requires_document',
+  min_days: 'min_days',
+  max_consecutive: 'max_consecutive',
+  notice_days: 'notice_days',
+  is_active: 'is_active',
+  description: 'description',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeavePolicyScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  contract_types: 'contract_types',
+  employee_types: 'employee_types',
+  sat_off_rule: 'sat_off_rule',
+  is_active: 'is_active',
+  accepted_by: 'accepted_by',
+  terms_text: 'terms_text',
+  version: 'version',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeavePolicyRuleScalarFieldEnum = {
+  id: 'id',
+  policy_id: 'policy_id',
+  leave_type_id: 'leave_type_id',
+  days_per_year: 'days_per_year',
+  carry_forward: 'carry_forward',
+  carry_forward_max: 'carry_forward_max'
+};
+
+exports.Prisma.FacultyLeavePolicyScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  policy_id: 'policy_id',
+  accepted: 'accepted',
+  accepted_at: 'accepted_at',
+  assigned_by: 'assigned_by',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.LeaveBalanceScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  leave_type_id: 'leave_type_id',
+  academic_year: 'academic_year',
+  total_days: 'total_days',
+  used_days: 'used_days',
+  pending_days: 'pending_days',
+  carried_forward: 'carried_forward',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveApprovalWorkflowScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  steps: 'steps',
+  created_by: 'created_by',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveApplicationScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  leave_type_id: 'leave_type_id',
+  from_date: 'from_date',
+  to_date: 'to_date',
+  total_days: 'total_days',
+  half_day: 'half_day',
+  half_day_period: 'half_day_period',
+  reason: 'reason',
+  documents: 'documents',
+  status: 'status',
+  current_level: 'current_level',
+  policy_accepted: 'policy_accepted',
+  policy_version: 'policy_version',
+  remarks: 'remarks',
+  rejection_reason: 'rejection_reason',
+  cancelled_by: 'cancelled_by',
+  cancelled_at: 'cancelled_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveApprovalStepScalarFieldEnum = {
+  id: 'id',
+  application_id: 'application_id',
+  approver_id: 'approver_id',
+  approver_role: 'approver_role',
+  level: 'level',
+  status: 'status',
+  remarks: 'remarks',
+  actioned_at: 'actioned_at',
+  notified_at: 'notified_at',
+  createdAt: 'createdAt',
+  leaveRequestId: 'leaveRequestId'
+};
+
+exports.Prisma.LeaveSubstitutionScalarFieldEnum = {
+  id: 'id',
+  application_id: 'application_id',
+  entry_id: 'entry_id',
+  date: 'date',
+  period_name: 'period_name',
+  subject_name: 'subject_name',
+  original_id: 'original_id',
+  substitute_id: 'substitute_id',
+  status: 'status',
+  responded_at: 'responded_at',
+  response_note: 'response_note',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.StudentLeaveScalarFieldEnum = {
+  id: 'id',
+  student_id: 'student_id',
+  from_date: 'from_date',
+  to_date: 'to_date',
+  total_days: 'total_days',
+  reason: 'reason',
+  documents: 'documents',
+  status: 'status',
+  approved_by: 'approved_by',
+  approved_at: 'approved_at',
+  remarks: 'remarks',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.AttendanceFreezeRuleScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  scope: 'scope',
+  scope_id: 'scope_id',
+  is_frozen: 'is_frozen',
+  frozen_by: 'frozen_by',
+  frozen_at: 'frozen_at',
+  freeze_reason: 'freeze_reason',
+  unfrozen_by: 'unfrozen_by',
+  unfrozen_at: 'unfrozen_at',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.StudentAttendanceScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  section_id: 'section_id',
+  subject_id: 'subject_id',
+  student_id: 'student_id',
+  faculty_id: 'faculty_id',
+  date: 'date',
+  period_name: 'period_name',
+  period_config_id: 'period_config_id',
+  status: 'status',
+  is_late: 'is_late',
+  late_reason: 'late_reason',
+  late_approved_by: 'late_approved_by',
+  late_approved_at: 'late_approved_at',
+  marked_by: 'marked_by',
+  marked_at: 'marked_at',
+  is_frozen: 'is_frozen',
+  back_entry: 'back_entry',
+  back_entry_reason: 'back_entry_reason',
+  back_entry_by: 'back_entry_by',
+  updatedAt: 'updatedAt',
+  facultyId: 'facultyId'
+};
+
+exports.Prisma.FacultyAttendanceScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  date: 'date',
+  in_time: 'in_time',
+  out_time: 'out_time',
+  status: 'status',
+  source: 'source',
+  device_id: 'device_id',
+  raw_logs: 'raw_logs',
+  remarks: 'remarks',
+  marked_by: 'marked_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TimetableGenConfigScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  dept_id: 'dept_id',
+  theory_periods_per_week: 'theory_periods_per_week',
+  lab_periods_per_week: 'lab_periods_per_week',
+  lab_consecutive: 'lab_consecutive',
+  allow_combined_sections: 'allow_combined_sections',
+  combined_rules: 'combined_rules',
+  working_days: 'working_days',
+  max_periods_per_day: 'max_periods_per_day',
+  generated_at: 'generated_at',
+  generated_by: 'generated_by',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.CourseStructureScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  subject_id: 'subject_id',
+  section_id: 'section_id',
+  session_id: 'session_id',
+  unit_no: 'unit_no',
+  unit_title: 'unit_title',
+  topic: 'topic',
+  sub_topic: 'sub_topic',
+  planned_hours: 'planned_hours',
+  order: 'order',
+  is_covered: 'is_covered',
+  covered_on: 'covered_on',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.TopicTaughtScalarFieldEnum = {
+  id: 'id',
+  attendance_date: 'attendance_date',
+  period_name: 'period_name',
+  faculty_id: 'faculty_id',
+  subject_id: 'subject_id',
+  section_id: 'section_id',
+  session_id: 'session_id',
+  course_topic_id: 'course_topic_id',
+  topic_text: 'topic_text',
+  sub_topic: 'sub_topic',
+  teaching_method: 'teaching_method',
+  remarks: 'remarks',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.SpecialSessionScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  title: 'title',
+  type: 'type',
+  organizer: 'organizer',
+  venue: 'venue',
+  from_date: 'from_date',
+  to_date: 'to_date',
+  from_time: 'from_time',
+  to_time: 'to_time',
+  attendance_counts_as: 'attendance_counts_as',
+  section_ids: 'section_ids',
+  faculty_ids: 'faculty_ids',
+  created_by: 'created_by',
+  description: 'description',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SpecialSessionAttendanceScalarFieldEnum = {
+  id: 'id',
+  special_session_id: 'special_session_id',
+  student_id: 'student_id',
+  faculty_id: 'faculty_id',
+  status: 'status',
+  marked_by: 'marked_by',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.DailyReportScalarFieldEnum = {
+  id: 'id',
+  report_date: 'report_date',
+  report_type: 'report_type',
+  faculty_id: 'faculty_id',
+  student_id: 'student_id',
+  section_id: 'section_id',
+  dept_id: 'dept_id',
+  branch_id: 'branch_id',
+  program_id: 'program_id',
+  session_id: 'session_id',
+  data: 'data',
+  generated_at: 'generated_at',
+  generated_by: 'generated_by'
+};
+
+exports.Prisma.TimetableEntryLogScalarFieldEnum = {
+  id: 'id',
+  timetable_id: 'timetable_id',
+  section_id: 'section_id',
+  session_id: 'session_id',
+  day: 'day',
+  period_config_id: 'period_config_id',
+  action: 'action',
+  prev_subject_id: 'prev_subject_id',
+  prev_faculty_id: 'prev_faculty_id',
+  prev_room_id: 'prev_room_id',
+  prev_entry_type: 'prev_entry_type',
+  new_subject_id: 'new_subject_id',
+  new_faculty_id: 'new_faculty_id',
+  new_room_id: 'new_room_id',
+  new_entry_type: 'new_entry_type',
+  swap_with_entry_id: 'swap_with_entry_id',
+  swap_section_id: 'swap_section_id',
+  changed_by: 'changed_by',
+  changed_by_name: 'changed_by_name',
+  changed_by_role: 'changed_by_role',
+  notes: 'notes',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.TimetableSnapshotScalarFieldEnum = {
+  id: 'id',
+  timetable_id: 'timetable_id',
+  section_id: 'section_id',
+  session_id: 'session_id',
+  version: 'version',
+  label: 'label',
+  is_active: 'is_active',
+  snapshot_data: 'snapshot_data',
+  published_by: 'published_by',
+  published_by_name: 'published_by_name',
+  reason: 'reason',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.FacultySubjectRequestScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  subject_id: 'subject_id',
+  session_id: 'session_id',
+  preference: 'preference',
+  status: 'status',
+  requested_at: 'requested_at',
+  reviewed_by: 'reviewed_by',
+  reviewed_at: 'reviewed_at',
+  review_note: 'review_note'
+};
+
+exports.Prisma.AcademicCalendarEventScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  title: 'title',
+  event_type: 'event_type',
+  start_date: 'start_date',
+  end_date: 'end_date',
+  week_no: 'week_no',
+  is_holiday: 'is_holiday',
+  is_working: 'is_working',
+  affects_attendance: 'affects_attendance',
+  color: 'color',
+  description: 'description',
+  dept_ids: 'dept_ids',
+  created_by: 'created_by',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ExtraAttendanceScalarFieldEnum = {
+  id: 'id',
+  student_id: 'student_id',
+  section_id: 'section_id',
+  subject_id: 'subject_id',
+  session_id: 'session_id',
+  units: 'units',
+  reason: 'reason',
+  type: 'type',
+  granted_by: 'granted_by',
+  granted_at: 'granted_at',
+  effective_date: 'effective_date',
+  approved: 'approved',
+  remarks: 'remarks'
+};
+
+exports.Prisma.StudentLeaveApprovalScalarFieldEnum = {
+  id: 'id',
+  leave_id: 'leave_id',
+  step: 'step',
+  role: 'role',
+  approver_id: 'approver_id',
+  status: 'status',
+  remarks: 'remarks',
+  acted_at: 'acted_at',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.AssignmentScalarFieldEnum = {
+  id: 'id',
+  title: 'title',
+  description: 'description',
+  instructions: 'instructions',
+  subject_id: 'subject_id',
+  faculty_id: 'faculty_id',
+  session_id: 'session_id',
+  section_ids: 'section_ids',
+  total_marks: 'total_marks',
+  passing_marks: 'passing_marks',
+  deadline: 'deadline',
+  allow_late: 'allow_late',
+  late_penalty_pct: 'late_penalty_pct',
+  max_late_days: 'max_late_days',
+  allow_file: 'allow_file',
+  allow_text: 'allow_text',
+  max_file_size_mb: 'max_file_size_mb',
+  allowed_formats: 'allowed_formats',
+  plagiarism_check: 'plagiarism_check',
+  plagiarism_threshold: 'plagiarism_threshold',
+  status: 'status',
+  published_at: 'published_at',
+  closed_at: 'closed_at',
+  co_mapping: 'co_mapping',
+  po_mapping: 'po_mapping',
+  created_by: 'created_by',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.AssignmentSubmissionScalarFieldEnum = {
+  id: 'id',
+  assignment_id: 'assignment_id',
+  student_id: 'student_id',
+  status: 'status',
+  text_content: 'text_content',
+  file_urls: 'file_urls',
+  file_names: 'file_names',
+  submitted_at: 'submitted_at',
+  is_late: 'is_late',
+  late_days: 'late_days',
+  similarity_pct: 'similarity_pct',
+  plagiarism_flag: 'plagiarism_flag',
+  checked_at: 'checked_at',
+  obtained_marks: 'obtained_marks',
+  penalty_marks: 'penalty_marks',
+  final_marks: 'final_marks',
+  graded_at: 'graded_at',
+  graded_by: 'graded_by',
+  grade_remarks: 'grade_remarks',
+  justify_reason: 'justify_reason',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.AssignmentGradeScalarFieldEnum = {
+  id: 'id',
+  assignment_id: 'assignment_id',
+  submission_id: 'submission_id',
+  student_id: 'student_id',
+  marks: 'marks',
+  letter_grade: 'letter_grade',
+  remarks: 'remarks',
+  graded_by: 'graded_by',
+  graded_at: 'graded_at'
+};
+
+exports.Prisma.ExamScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  title: 'title',
+  code: 'code',
+  exam_type: 'exam_type',
+  status: 'status',
+  dept_ids: 'dept_ids',
+  start_date: 'start_date',
+  end_date: 'end_date',
+  seating_auto: 'seating_auto',
+  hall_ticket_enabled: 'hall_ticket_enabled',
+  result_published: 'result_published',
+  result_published_at: 'result_published_at',
+  instructions: 'instructions',
+  created_by: 'created_by',
+  cancelled_by: 'cancelled_by',
+  cancelled_at: 'cancelled_at',
+  cancel_reason: 'cancel_reason',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ExamScheduleScalarFieldEnum = {
+  id: 'id',
+  exam_id: 'exam_id',
+  subject_id: 'subject_id',
+  branch_ids: 'branch_ids',
+  section_ids: 'section_ids',
+  exam_date: 'exam_date',
+  start_time: 'start_time',
+  end_time: 'end_time',
+  duration_mins: 'duration_mins',
+  max_marks: 'max_marks',
+  passing_marks: 'passing_marks',
+  co_mapping: 'co_mapping',
+  is_practical: 'is_practical',
+  notes: 'notes',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.ExamRoomScalarFieldEnum = {
+  id: 'id',
+  exam_id: 'exam_id',
+  exam_date: 'exam_date',
+  room_id: 'room_id',
+  capacity: 'capacity',
+  invigilator_ids: 'invigilator_ids',
+  notes: 'notes'
+};
+
+exports.Prisma.ExamSeatingScalarFieldEnum = {
+  id: 'id',
+  exam_id: 'exam_id',
+  exam_room_id: 'exam_room_id',
+  student_id: 'student_id',
+  roll_no: 'roll_no',
+  seat_no: 'seat_no',
+  exam_date: 'exam_date',
+  subject_id: 'subject_id',
+  row_no: 'row_no',
+  col_no: 'col_no',
+  is_manual: 'is_manual',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.HallTicketScalarFieldEnum = {
+  id: 'id',
+  exam_id: 'exam_id',
+  student_id: 'student_id',
+  ticket_no: 'ticket_no',
+  generated_at: 'generated_at',
+  generated_by: 'generated_by',
+  is_valid: 'is_valid',
+  invalidated_reason: 'invalidated_reason',
+  downloaded_at: 'downloaded_at',
+  pdf_url: 'pdf_url'
+};
+
+exports.Prisma.QuestionPaperScalarFieldEnum = {
+  id: 'id',
+  exam_id: 'exam_id',
+  subject_id: 'subject_id',
+  faculty_id: 'faculty_id',
+  title: 'title',
+  file_url: 'file_url',
+  text_content: 'text_content',
+  format_type: 'format_type',
+  co_mapping: 'co_mapping',
+  po_mapping: 'po_mapping',
+  status: 'status',
+  submitted_at: 'submitted_at',
+  approved_by: 'approved_by',
+  approved_at: 'approved_at',
+  include_logo: 'include_logo',
+  header_html: 'header_html',
+  deleted_at: 'deleted_at',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ExamMarkScalarFieldEnum = {
+  id: 'id',
+  exam_id: 'exam_id',
+  student_id: 'student_id',
+  subject_id: 'subject_id',
+  exam_type: 'exam_type',
+  marks_obtained: 'marks_obtained',
+  max_marks: 'max_marks',
+  is_absent: 'is_absent',
+  is_withheld: 'is_withheld',
+  remarks: 'remarks',
+  entered_by: 'entered_by',
+  verified_by: 'verified_by',
+  verified_at: 'verified_at',
+  result_published: 'result_published',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.FeeStructureScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  program_id: 'program_id',
+  branch_id: 'branch_id',
+  semester: 'semester',
+  title: 'title',
+  total_amount: 'total_amount',
+  installments: 'installments',
+  components: 'components',
+  created_by: 'created_by',
+  is_active: 'is_active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ScholarshipScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  code: 'code',
+  type: 'type',
+  amount_type: 'amount_type',
+  amount: 'amount',
+  max_amount: 'max_amount',
+  eligibility: 'eligibility',
+  session_id: 'session_id',
+  is_active: 'is_active',
+  created_by: 'created_by',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.FeePaymentScalarFieldEnum = {
+  id: 'id',
+  student_id: 'student_id',
+  fee_structure_id: 'fee_structure_id',
+  session_id: 'session_id',
+  total_amount: 'total_amount',
+  paid_amount: 'paid_amount',
+  due_amount: 'due_amount',
+  status: 'status',
+  installment_no: 'installment_no',
+  installment_due_date: 'installment_due_date',
+  payment_date: 'payment_date',
+  payment_mode: 'payment_mode',
+  receipt_no: 'receipt_no',
+  transaction_ref: 'transaction_ref',
+  bank_ref: 'bank_ref',
+  scholarship_id: 'scholarship_id',
+  waiver_amount: 'waiver_amount',
+  waiver_reason: 'waiver_reason',
+  received_by: 'received_by',
+  verified_by: 'verified_by',
+  verified_at: 'verified_at',
+  remarks: 'remarks',
+  receipt_url: 'receipt_url',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SalaryComponentScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  code: 'code',
+  type: 'type',
+  calc_type: 'calc_type',
+  value: 'value',
+  is_taxable: 'is_taxable',
+  is_statutory: 'is_statutory',
+  is_active: 'is_active',
+  sort_order: 'sort_order',
+  description: 'description',
+  created_by: 'created_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SalarySlipScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  cycle_id: 'cycle_id',
+  month: 'month',
+  year: 'year',
+  status: 'status',
+  gross_salary: 'gross_salary',
+  total_deductions: 'total_deductions',
+  net_salary: 'net_salary',
+  working_days: 'working_days',
+  present_days: 'present_days',
+  lop_days: 'lop_days',
+  generated_by: 'generated_by',
+  generated_at: 'generated_at',
+  approved_by: 'approved_by',
+  approved_at: 'approved_at',
+  paid_by: 'paid_by',
+  paid_at: 'paid_at',
+  pdf_url: 'pdf_url',
+  remarks: 'remarks',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.SalarySlipComponentScalarFieldEnum = {
+  id: 'id',
+  slip_id: 'slip_id',
+  component_id: 'component_id',
+  amount: 'amount',
+  is_earning: 'is_earning'
+};
+
+exports.Prisma.StudentSkillCardScalarFieldEnum = {
+  id: 'id',
+  student_id: 'student_id',
+  branch_id: 'branch_id',
+  program_id: 'program_id',
+  domain_track: 'domain_track',
+  batch_year: 'batch_year',
+  total_entries: 'total_entries',
+  completed_entries: 'completed_entries',
+  readiness_level: 'readiness_level',
+  domain_track_completed: 'domain_track_completed',
+  placement_score: 'placement_score',
+  domain_rank: 'domain_rank',
+  issued_at: 'issued_at',
+  last_updated: 'last_updated',
+  issued_by: 'issued_by',
+  pdf_url: 'pdf_url'
+};
+
+exports.Prisma.SkillCardEntryScalarFieldEnum = {
+  id: 'id',
+  skill_card_id: 'skill_card_id',
+  student_id: 'student_id',
+  year_no: 'year_no',
+  semester_no: 'semester_no',
+  entry_no: 'entry_no',
+  training_id: 'training_id',
+  course_name: 'course_name',
+  provider: 'provider',
+  duration: 'duration',
+  course_url: 'course_url',
+  type: 'type',
+  is_completed: 'is_completed',
+  completion_date: 'completion_date',
+  certificate_url: 'certificate_url',
+  is_verified: 'is_verified',
+  verified_by: 'verified_by',
+  verified_at: 'verified_at',
+  verified_sign: 'verified_sign',
+  co_mapping: 'co_mapping',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.AdminDeptScopeScalarFieldEnum = {
+  id: 'id',
+  user_id: 'user_id',
+  dept_id: 'dept_id',
+  role: 'role',
+  modules: 'modules',
+  granted_by: 'granted_by',
+  is_active: 'is_active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveRulePolicyScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  session_id: 'session_id',
+  staff_type: 'staff_type',
+  dept_id: 'dept_id',
+  is_active: 'is_active',
+  created_by: 'created_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveRuleScalarFieldEnum = {
+  id: 'id',
+  policy_id: 'policy_id',
+  leave_type: 'leave_type',
+  label: 'label',
+  max_per_session: 'max_per_session',
+  max_consecutive: 'max_consecutive',
+  max_in_month: 'max_in_month',
+  carry_forward: 'carry_forward',
+  encashable: 'encashable',
+  requires_cover: 'requires_cover',
+  min_notice_days: 'min_notice_days',
+  applies_to: 'applies_to',
+  is_slot_based: 'is_slot_based',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.LeaveSlotScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  slot_type: 'slot_type',
+  session_id: 'session_id',
+  start_date: 'start_date',
+  end_date: 'end_date',
+  max_leaves: 'max_leaves',
+  staff_type: 'staff_type',
+  dept_id: 'dept_id',
+  is_active: 'is_active',
+  created_by: 'created_by',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.SalaryCycleScalarFieldEnum = {
+  id: 'id',
+  session_id: 'session_id',
+  month: 'month',
+  year: 'year',
+  total_days: 'total_days',
+  working_days: 'working_days',
+  from_date: 'from_date',
+  to_date: 'to_date',
+  is_locked: 'is_locked',
+  locked_by: 'locked_by',
+  locked_at: 'locked_at',
+  notes: 'notes',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.FacultyLeaveQuotaScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  policy_id: 'policy_id',
+  session_id: 'session_id',
+  leave_type: 'leave_type',
+  allocated: 'allocated',
+  used: 'used',
+  pending: 'pending',
+  lapsed: 'lapsed',
+  carried_forward: 'carried_forward',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.PermissionGroupScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  description: 'description',
+  color: 'color',
+  permissions: 'permissions',
+  is_active: 'is_active',
+  created_by: 'created_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.UserPermissionGroupScalarFieldEnum = {
+  id: 'id',
+  user_id: 'user_id',
+  group_id: 'group_id',
+  assigned_by: 'assigned_by',
+  assignedAt: 'assignedAt'
+};
+
+exports.Prisma.HolidayScalarFieldEnum = {
+  id: 'id',
+  date: 'date',
+  name: 'name',
+  type: 'type',
+  session_id: 'session_id',
+  dept_id: 'dept_id',
+  is_active: 'is_active',
+  created_by: 'created_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.UniversityScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  code: 'code',
+  address: 'address',
+  website: 'website',
+  is_active: 'is_active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.ProgramAffiliationScalarFieldEnum = {
+  id: 'id',
+  university_id: 'university_id',
+  program_id: 'program_id',
+  branch_id: 'branch_id',
+  affiliation_no: 'affiliation_no',
+  valid_from: 'valid_from',
+  valid_to: 'valid_to',
+  is_active: 'is_active',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
+};
+
+exports.Prisma.NotificationConfigScalarFieldEnum = {
+  id: 'id',
+  type: 'type',
+  is_enabled: 'is_enabled',
+  smtp_host: 'smtp_host',
+  smtp_port: 'smtp_port',
+  smtp_user: 'smtp_user',
+  smtp_pass: 'smtp_pass',
+  smtp_from: 'smtp_from',
+  smtp_from_name: 'smtp_from_name',
+  wa_api_key: 'wa_api_key',
+  wa_from: 'wa_from',
+  wa_provider: 'wa_provider',
+  updated_by: 'updated_by',
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.NotificationTemplateScalarFieldEnum = {
+  id: 'id',
+  key: 'key',
+  name: 'name',
+  subject: 'subject',
+  body_email: 'body_email',
+  body_whatsapp: 'body_whatsapp',
+  variables: 'variables',
+  is_active: 'is_active',
+  created_by: 'created_by',
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.CronScheduleScalarFieldEnum = {
+  id: 'id',
+  name: 'name',
+  key: 'key',
+  cron_expr: 'cron_expr',
+  template_key: 'template_key',
+  channel: 'channel',
+  recipients: 'recipients',
+  is_active: 'is_active',
+  last_run: 'last_run',
+  last_status: 'last_status',
+  last_error: 'last_error',
+  created_by: 'created_by',
+  updatedAt: 'updatedAt',
+  createdAt: 'createdAt'
+};
+
+exports.Prisma.FacultyQualificationScalarFieldEnum = {
+  id: 'id',
+  faculty_id: 'faculty_id',
+  level: 'level',
+  board_university: 'board_university',
+  institution: 'institution',
+  subject_stream: 'subject_stream',
+  percentage: 'percentage',
+  grade: 'grade',
+  year_of_passing: 'year_of_passing',
+  certificate_url: 'certificate_url',
+  is_verified: 'is_verified',
+  verified_by: 'verified_by',
+  createdAt: 'createdAt',
+  updatedAt: 'updatedAt'
 };
 
 exports.Prisma.SortOrder = {
@@ -663,6 +2128,10 @@ exports.Prisma.SortOrder = {
 
 exports.Prisma.NullableJsonNullValueInput = {
   DbNull: Prisma.DbNull,
+  JsonNull: Prisma.JsonNull
+};
+
+exports.Prisma.JsonNullValueInput = {
   JsonNull: Prisma.JsonNull
 };
 
@@ -689,7 +2158,148 @@ exports.NotificationType = exports.$Enums.NotificationType = {
   FORM_CLOSED: 'FORM_CLOSED',
   GENERAL: 'GENERAL',
   ACCOUNT_BLOCKED: 'ACCOUNT_BLOCKED',
-  ACCOUNT_UNBLOCKED: 'ACCOUNT_UNBLOCKED'
+  ACCOUNT_UNBLOCKED: 'ACCOUNT_UNBLOCKED',
+  LEAVE_SUBMITTED: 'LEAVE_SUBMITTED',
+  LEAVE_APPROVED: 'LEAVE_APPROVED',
+  LEAVE_REJECTED: 'LEAVE_REJECTED',
+  GROUP_ANNOUNCEMENT: 'GROUP_ANNOUNCEMENT',
+  GROUP_TASK: 'GROUP_TASK',
+  GROUP_POLL: 'GROUP_POLL',
+  GROUP_NOTICE: 'GROUP_NOTICE',
+  STATUS_CHANGED: 'STATUS_CHANGED'
+};
+
+exports.RoomType = exports.$Enums.RoomType = {
+  CLASSROOM: 'CLASSROOM',
+  LAB: 'LAB',
+  SEMINAR_HALL: 'SEMINAR_HALL',
+  AUDITORIUM: 'AUDITORIUM',
+  TRAINING_ROOM: 'TRAINING_ROOM',
+  CONFERENCE_ROOM: 'CONFERENCE_ROOM',
+  LIBRARY: 'LIBRARY',
+  OTHER: 'OTHER'
+};
+
+exports.PeriodType = exports.$Enums.PeriodType = {
+  LECTURE: 'LECTURE',
+  LAB: 'LAB',
+  LUNCH: 'LUNCH',
+  BREAK: 'BREAK',
+  ASSEMBLY: 'ASSEMBLY',
+  OTHER: 'OTHER'
+};
+
+exports.TimetableStatus = exports.$Enums.TimetableStatus = {
+  DRAFT: 'DRAFT',
+  PUBLISHED: 'PUBLISHED',
+  LOCKED: 'LOCKED',
+  ARCHIVED: 'ARCHIVED'
+};
+
+exports.EntryType = exports.$Enums.EntryType = {
+  LECTURE: 'LECTURE',
+  LAB: 'LAB',
+  TUTORIAL: 'TUTORIAL',
+  FREE: 'FREE',
+  LUNCH: 'LUNCH',
+  BREAK: 'BREAK'
+};
+
+exports.SubstStatus = exports.$Enums.SubstStatus = {
+  PENDING: 'PENDING',
+  ACCEPTED: 'ACCEPTED',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED'
+};
+
+exports.CalendarEventType = exports.$Enums.CalendarEventType = {
+  COMMENCEMENT_OF_CLASSES: 'COMMENCEMENT_OF_CLASSES',
+  HOLIDAY: 'HOLIDAY',
+  OFF_SATURDAY: 'OFF_SATURDAY',
+  ANNUAL_FEST: 'ANNUAL_FEST',
+  PTM: 'PTM',
+  SESSIONAL_TEST: 'SESSIONAL_TEST',
+  SESSIONAL_MARKS_DISPLAY: 'SESSIONAL_MARKS_DISPLAY',
+  ATTENDANCE_ELIGIBILITY: 'ATTENDANCE_ELIGIBILITY',
+  PRE_UNIVERSITY_EXAM: 'PRE_UNIVERSITY_EXAM',
+  LAST_TEACHING_DAY: 'LAST_TEACHING_DAY',
+  UNIVERSITY_PRACTICAL: 'UNIVERSITY_PRACTICAL',
+  UNIVERSITY_THEORY_EXAM: 'UNIVERSITY_THEORY_EXAM',
+  CLASS_TEST: 'CLASS_TEST',
+  INTERNAL_PRACTICAL: 'INTERNAL_PRACTICAL',
+  WORKING_SATURDAY: 'WORKING_SATURDAY',
+  SPECIAL_EVENT: 'SPECIAL_EVENT',
+  HACKATHON: 'HACKATHON',
+  CULTURAL_EVENT: 'CULTURAL_EVENT',
+  SPORTS_EVENT: 'SPORTS_EVENT',
+  EXAM: 'EXAM',
+  EVENT: 'EVENT',
+  FESTIVAL: 'FESTIVAL',
+  SPORTS: 'SPORTS',
+  CULTURAL: 'CULTURAL',
+  ACADEMIC: 'ACADEMIC',
+  LEAVE: 'LEAVE',
+  OTHER: 'OTHER'
+};
+
+exports.LeaveApprovalStatus = exports.$Enums.LeaveApprovalStatus = {
+  PENDING: 'PENDING',
+  APPROVED: 'APPROVED',
+  REJECTED: 'REJECTED',
+  FORWARDED: 'FORWARDED',
+  CANCELLED: 'CANCELLED'
+};
+
+exports.SubmissionStatus = exports.$Enums.SubmissionStatus = {
+  DRAFT: 'DRAFT',
+  SUBMITTED: 'SUBMITTED',
+  LATE: 'LATE',
+  GRADED: 'GRADED',
+  RETURNED: 'RETURNED',
+  PLAGIARISM_FLAGGED: 'PLAGIARISM_FLAGGED',
+  PENDING: 'PENDING',
+  FLAGGED: 'FLAGGED',
+  RESUBMIT: 'RESUBMIT'
+};
+
+exports.ExamType = exports.$Enums.ExamType = {
+  CLASS_TEST: 'CLASS_TEST',
+  SESSIONAL_1: 'SESSIONAL_1',
+  SESSIONAL_2: 'SESSIONAL_2',
+  MID_TERM: 'MID_TERM',
+  PRE_UNIVERSITY: 'PRE_UNIVERSITY',
+  UNIVERSITY_THEORY: 'UNIVERSITY_THEORY',
+  UNIVERSITY_PRACTICAL: 'UNIVERSITY_PRACTICAL',
+  INTERNAL_PRACTICAL: 'INTERNAL_PRACTICAL'
+};
+
+exports.ExamStatus = exports.$Enums.ExamStatus = {
+  DRAFT: 'DRAFT',
+  SCHEDULED: 'SCHEDULED',
+  ONGOING: 'ONGOING',
+  COMPLETED: 'COMPLETED',
+  CANCELLED: 'CANCELLED',
+  POSTPONED: 'POSTPONED'
+};
+
+exports.FeeStatus = exports.$Enums.FeeStatus = {
+  PENDING: 'PENDING',
+  PAID: 'PAID',
+  PARTIAL: 'PARTIAL',
+  WAIVED: 'WAIVED',
+  SCHOLARSHIP: 'SCHOLARSHIP',
+  OVERDUE: 'OVERDUE',
+  REFUNDED: 'REFUNDED',
+  NOT_APPLICABLE: 'NOT_APPLICABLE'
+};
+
+exports.SalaryStatus = exports.$Enums.SalaryStatus = {
+  DRAFT: 'DRAFT',
+  GENERATED: 'GENERATED',
+  APPROVED: 'APPROVED',
+  PAID: 'PAID',
+  REJECTED: 'REJECTED',
+  CANCELLED: 'CANCELLED'
 };
 
 exports.Prisma.ModelName = {
@@ -698,32 +2308,45 @@ exports.Prisma.ModelName = {
   RolePermission: 'RolePermission',
   UserRole: 'UserRole',
   UserPermission: 'UserPermission',
+  User: 'User',
   UserSession: 'UserSession',
   LoginHistory: 'LoginHistory',
-  OtpToken: 'OtpToken',
-  UserTotp: 'UserTotp',
-  ErpSetting: 'ErpSetting',
-  User: 'User',
   PasswordResetToken: 'PasswordResetToken',
   Admin: 'Admin',
   AcademicSession: 'AcademicSession',
   Department: 'Department',
   Program: 'Program',
-  Course: 'Course',
+  Branch: 'Branch',
   Subject: 'Subject',
   Section: 'Section',
+  StudentSectionHistory: 'StudentSectionHistory',
   SectionSubject: 'SectionSubject',
   SectionSubjectHistory: 'SectionSubjectHistory',
   SectionHistory: 'SectionHistory',
   Student: 'Student',
+  StudentHistory: 'StudentHistory',
   StudentSubject: 'StudentSubject',
   StudentEnrollment: 'StudentEnrollment',
+  Faculty: 'Faculty',
+  FacultyCareerHistory: 'FacultyCareerHistory',
+  FacultySubject: 'FacultySubject',
+  LeaveRequest: 'LeaveRequest',
+  LeaveApprovalFlow: 'LeaveApprovalFlow',
+  UIPermission: 'UIPermission',
   SpecialGroup: 'SpecialGroup',
   SpecialGroupMember: 'SpecialGroupMember',
   FacultyGroup: 'FacultyGroup',
   FacultyGroupMember: 'FacultyGroupMember',
-  Faculty: 'Faculty',
-  FacultySubject: 'FacultySubject',
+  GroupAnnouncement: 'GroupAnnouncement',
+  GroupAttendanceRequest: 'GroupAttendanceRequest',
+  GroupTask: 'GroupTask',
+  GroupPoll: 'GroupPoll',
+  GroupPollChoice: 'GroupPollChoice',
+  GroupPollResponse: 'GroupPollResponse',
+  GroupFile: 'GroupFile',
+  GroupNotice: 'GroupNotice',
+  GroupRoomBooking: 'GroupRoomBooking',
+  CurriculumSubject: 'CurriculumSubject',
   FeedbackCategory: 'FeedbackCategory',
   FeedbackQuestion: 'FeedbackQuestion',
   FeedbackForm: 'FeedbackForm',
@@ -732,8 +2355,82 @@ exports.Prisma.ModelName = {
   FeedbackResponse: 'FeedbackResponse',
   FeedbackAnswer: 'FeedbackAnswer',
   Notification: 'Notification',
-  CurriculumSubject: 'CurriculumSubject',
-  AuditLog: 'AuditLog'
+  AuditLog: 'AuditLog',
+  OtpToken: 'OtpToken',
+  ErpSetting: 'ErpSetting',
+  UserTotp: 'UserTotp',
+  AcademicPeriod: 'AcademicPeriod',
+  DepartmentHistory: 'DepartmentHistory',
+  ProgramHistory: 'ProgramHistory',
+  BranchHistory: 'BranchHistory',
+  SectionSnapshot: 'SectionSnapshot',
+  EnrollmentHistory: 'EnrollmentHistory',
+  Room: 'Room',
+  RoomSubject: 'RoomSubject',
+  RoomStaff: 'RoomStaff',
+  PeriodConfig: 'PeriodConfig',
+  Timetable: 'Timetable',
+  TimetableEntry: 'TimetableEntry',
+  Substitution: 'Substitution',
+  FacultyWorkload: 'FacultyWorkload',
+  LeaveType: 'LeaveType',
+  LeavePolicy: 'LeavePolicy',
+  LeavePolicyRule: 'LeavePolicyRule',
+  FacultyLeavePolicy: 'FacultyLeavePolicy',
+  LeaveBalance: 'LeaveBalance',
+  LeaveApprovalWorkflow: 'LeaveApprovalWorkflow',
+  LeaveApplication: 'LeaveApplication',
+  LeaveApprovalStep: 'LeaveApprovalStep',
+  LeaveSubstitution: 'LeaveSubstitution',
+  StudentLeave: 'StudentLeave',
+  AttendanceFreezeRule: 'AttendanceFreezeRule',
+  StudentAttendance: 'StudentAttendance',
+  FacultyAttendance: 'FacultyAttendance',
+  TimetableGenConfig: 'TimetableGenConfig',
+  CourseStructure: 'CourseStructure',
+  TopicTaught: 'TopicTaught',
+  SpecialSession: 'SpecialSession',
+  SpecialSessionAttendance: 'SpecialSessionAttendance',
+  DailyReport: 'DailyReport',
+  TimetableEntryLog: 'TimetableEntryLog',
+  TimetableSnapshot: 'TimetableSnapshot',
+  FacultySubjectRequest: 'FacultySubjectRequest',
+  AcademicCalendarEvent: 'AcademicCalendarEvent',
+  ExtraAttendance: 'ExtraAttendance',
+  StudentLeaveApproval: 'StudentLeaveApproval',
+  Assignment: 'Assignment',
+  AssignmentSubmission: 'AssignmentSubmission',
+  AssignmentGrade: 'AssignmentGrade',
+  Exam: 'Exam',
+  ExamSchedule: 'ExamSchedule',
+  ExamRoom: 'ExamRoom',
+  ExamSeating: 'ExamSeating',
+  HallTicket: 'HallTicket',
+  QuestionPaper: 'QuestionPaper',
+  ExamMark: 'ExamMark',
+  FeeStructure: 'FeeStructure',
+  Scholarship: 'Scholarship',
+  FeePayment: 'FeePayment',
+  SalaryComponent: 'SalaryComponent',
+  SalarySlip: 'SalarySlip',
+  SalarySlipComponent: 'SalarySlipComponent',
+  StudentSkillCard: 'StudentSkillCard',
+  SkillCardEntry: 'SkillCardEntry',
+  AdminDeptScope: 'AdminDeptScope',
+  LeaveRulePolicy: 'LeaveRulePolicy',
+  LeaveRule: 'LeaveRule',
+  LeaveSlot: 'LeaveSlot',
+  SalaryCycle: 'SalaryCycle',
+  FacultyLeaveQuota: 'FacultyLeaveQuota',
+  PermissionGroup: 'PermissionGroup',
+  UserPermissionGroup: 'UserPermissionGroup',
+  Holiday: 'Holiday',
+  University: 'University',
+  ProgramAffiliation: 'ProgramAffiliation',
+  NotificationConfig: 'NotificationConfig',
+  NotificationTemplate: 'NotificationTemplate',
+  CronSchedule: 'CronSchedule',
+  FacultyQualification: 'FacultyQualification'
 };
 
 /**

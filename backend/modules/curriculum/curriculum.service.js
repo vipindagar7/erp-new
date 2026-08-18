@@ -164,7 +164,7 @@ export const autoAssignSubjectsToSection = async (section_id, { reason = "manual
   }
 
   const curriculumIds = new Set(curriculum.map((c) => c.subject_id));
-  const existing = new Navigation(section.sectionSubjects.map((ss) => [ss.subject_id, ss]));
+  const existing = new Map(section.sectionSubjects.map((ss) => [ss.subject_id, ss]));
 
   const assigned = [];
   const updated = [];
@@ -205,7 +205,7 @@ export const autoAssignSubjectsToSection = async (section_id, { reason = "manual
           changed_by,
         });
       } else {
-        already_had.push({ subject_id: cs.subject_id, name: cs.subject_name, code: cs.subject_code });
+        already_had.push({ subject_id: cs.subject_id, name: cs.subject_name });eady_had.push({ subject_id: cs.subject_id, name: cs.subject_name, code: cs.subject_code });
       }
     } else {
       // New — create

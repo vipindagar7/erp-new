@@ -9,63 +9,66 @@ import { createNotification } from "../notification/notification.js";
 // DASHBOARD
 // ═══════════════════════════════════════════════════════════════
 export const getDashboardStats = async () => {
+  const sc = async (fn) => { try { return await fn(); } catch { return 0; } };
+  const sf = async (fn) => { try { return await fn(); } catch { return []; } };
+
   const [
     totalStudents, totalFaculty, totalDepts, totalSections,
-    totalSubjects, totalCourses, totalPrograms,
+    totalSubjects, totalBranches, totalPrograms,
     activeEnrollments, detainedEnrollments, passedEnrollments,
     activeForms, totalResponses,
     blockedStudents, blockedFaculty,
     recentStudents, recentFaculty,
     genderStats, sectionStats,
   ] = await Promise.all([
-    prisma.student.count(),
-    prisma.faculty.count(),
-    prisma.department.count(),
-    prisma.section.count(),
-    prisma.subject.count(),
-    prisma.course.count(),
-    prisma.program.count(),
-    prisma.studentEnrollment.count({ where: { is_current: true, status: "ACTIVE" } }),
-    prisma.studentEnrollment.count({ where: { is_current: true, status: "DETAINED" } }),
-    prisma.studentEnrollment.count({ where: { is_current: true, status: "PASSED" } }),
-    prisma.feedbackForm.count({ where: { is_active: true, end_date: { gte: new Date() } } }),
-    prisma.feedbackResponse.count(),
-    prisma.user.count({ where: { isBlocked: true, role: "STUDENT" } }),
-    prisma.user.count({ where: { isBlocked: true, role: "FACULTY" } }),
-    prisma.student.findMany({
+    sc(() => prisma.student.count()),
+    sc(() => prisma.faculty.count()),
+    sc(() => prisma.department.count()),
+    sc(() => prisma.section.count()),
+    sc(() => prisma.subject.count()),
+    sc(() => prisma.branch.count()),
+    sc(() => prisma.program.count()),
+    sc(() => prisma.studentEnrollment.count({ where: { is_current: true, status: "ACTIVE" } })),
+    sc(() => prisma.studentEnrollment.count({ where: { is_current: true, status: "DETAINED" } })),
+    sc(() => prisma.studentEnrollment.count({ where: { is_current: true, status: "PASSED" } })),
+    sc(() => prisma.feedbackForm.count({ where: { is_active: true, end_date: { gte: new Date() } } })),
+    sc(() => prisma.feedbackResponse.count()),
+    sc(() => prisma.user.count({ where: { isBlocked: true, role: "STUDENT" } })),
+    sc(() => prisma.user.count({ where: { isBlocked: true, role: "FACULTY" } })),
+    sf(() => prisma.student.findMany({
       take: 5, orderBy: { createdAt: "desc" },
       select: {
         id: true, name: true, createdAt: true,
         section: { select: { name: true, semester: true } },
         department: { select: { name: true } },
       },
-    }),
-    prisma.faculty.findMany({
+    })),
+    sf(() => prisma.faculty.findMany({
       take: 5, orderBy: { createdAt: "desc" },
       select: {
         id: true, name: true, designation: true, createdAt: true,
         department: { select: { name: true } },
       },
-    }),
-    prisma.student.groupBy({ by: ["gender"], _count: true }),
-    prisma.section.findMany({
+    })),
+    sf(() => prisma.student.groupBy({ by: ["gender"], _count: true })),
+    sf(() => prisma.section.findMany({
       take: 5,
       select: {
         id: true, name: true, semester: true, batch: true,
-        course: { select: { name: true } },
+        branch: { select: { id: true, name: true, program: { select: { name: true } } } },
         _count: { select: { students: true } },
       },
       orderBy: { students: { _count: "desc" } },
-    }),
+    })),
   ]);
 
   return {
-    counts: { students: totalStudents, faculty: totalFaculty, departments: totalDepts, sections: totalSections, subjects: totalSubjects, courses: totalCourses, programs: totalPrograms },
+    counts: { students: totalStudents, faculty: totalFaculty, departments: totalDepts, sections: totalSections, subjects: totalSubjects, branches: totalBranches, programs: totalPrograms },
     enrollments: { active: activeEnrollments, detained: detainedEnrollments, passed: passedEnrollments, total: activeEnrollments + detainedEnrollments + passedEnrollments },
     feedback: { active_forms: activeForms, total_responses: totalResponses },
     blocked: { students: blockedStudents, faculty: blockedFaculty },
     gender: genderStats.map((g) => ({ gender: g.gender || "Not specified", count: g._count })),
-    top_sections: sectionStats.map((s) => ({ id: s.id, name: s.name, course: s.course?.name, semester: s.semester, batch: s.batch, students: s._count.students })),
+    top_sections: sectionStats.map((s) => ({ id: s.id, name: s.name, branch: s.branch?.name, program: s.branch?.program?.name, semester: s.semester, batch: s.batch, students: s._count.students })),
     recent: { students: recentStudents, faculty: recentFaculty },
   };
 };
@@ -258,7 +261,7 @@ export const exportStudentsBySection = async (section_id) => {
   const headers = ["Name", "Roll No", "Enrollment No", "Email", "Phone", "Gender", "DOB", "Department", "Program", "Course", "Section", "Semester", "Batch", "Academic Year", "Enrollment Status", "Father Name", "Mother Name", "City", "State"];
   const rows = students.map((s) => {
     const enr = s.enrollments[0];
-    return [s.name, s.roll_no || "", s.enrollment_no || "", s.user?.email || "", s.phone || "", s.gender || "", s.dob ? new Date(s.dob).toLocaleDateString() : "", s.department?.name || "", s.program?.name || "", s.course?.name || "", s.section?.name || "", enr?.semester || "", s.section?.batch || "", enr?.academic_year || "", enr?.status || "", s.father_name || "", s.mother_name || "", s.city || "", s.state || ""];
+    return [s.name, s.roll_no || "", s.enrollment_no || "", s.user?.email || "", s.phone || "", s.gender || "", s.dob ? new Date(s.dob).toLocaleDateString() : "", s.department?.name || "", s.program?.name || "", s.branch?.name || "", s.section?.name || "", enr?.semester || "", s.section?.batch || "", enr?.academic_year || "", enr?.status || "", s.father_name || "", s.mother_name || "", s.city || "", s.state || ""];
   });
   return _writeXlsx("Students", headers, rows);
 };
@@ -290,7 +293,7 @@ export const exportEnrollmentReport = async () => {
   });
 
   const headers = ["Student Name", "Roll No", "Enrollment No", "Department", "Program", "Course", "Section", "Semester", "Academic Year", "Batch", "Status", "Remarks"];
-  const rows = enrollments.map((e) => [e.student?.name || "", e.student?.roll_no || "", e.student?.enrollment_no || "", e.student?.department?.name || "", e.student?.program?.name || "", e.student?.course?.name || "", e.section?.name || "", e.semester, e.academic_year, e.section?.batch || "", e.status, e.remarks || ""]);
+  const rows = enrollments.map((e) => [e.student?.name || "", e.student?.roll_no || "", e.student?.enrollment_no || "", e.student?.department?.name || "", e.student?.program?.name || "", e.student?.branch?.name || "", e.section?.name || "", e.semester, e.academic_year, e.section?.batch || "", e.status, e.remarks || ""]);
   return _writeXlsx("Enrollments", headers, rows);
 };
 
@@ -482,7 +485,7 @@ export const getStudentAnalytics = async () => {
   // Enrich dept stats with names
   const depts = await prisma.department.findMany({ select: { id: true, name: true } });
   const programs = await prisma.program.findMany({ select: { id: true, name: true } });
-  const courses = await prisma.course.findMany({ select: { id: true, name: true } });
+  const courses = await prisma.branch.findMany({ select: { id: true, name: true } }).catch(() => []);
   const deptMap = Object.fromEntries(depts.map((d) => [d.id, d.name]));
   const programMap = Object.fromEntries(programs.map((p) => [p.id, p.name]));
   const courseMap = Object.fromEntries(courses.map((c) => [c.id, c.name]));
@@ -535,14 +538,14 @@ export const getStudentAnalytics = async () => {
     monthlyEnrollments: monthlyEnrollments,
     sectionStrength: sectionStrength.map((s) => ({
       id: s.id,
-      name: `${s.course?.program?.name || ""} ${s.course?.name || ""} Sem ${s.semester} ${s.name}`.trim(),
+      name: `${s.course?.program?.name || ""} ${s.branch?.name || ""} Sem ${s.semester} ${s.name}`.trim(),
       students: s._count.students,
       batch: s.batch,
     })),
     topSections: topSections.map((s) => ({
       id: s.id,
       name: s.name,
-      course: s.course?.name,
+      course: s.branch?.name,
       program: s.course?.program?.name,
       dept: s.course?.program?.department?.name,
       semester: s.semester,
@@ -581,19 +584,19 @@ export const getStudentAnalytics = async () => {
 // ═══════════════════════════════════════════════════════════════
 export const exportStudentsAdvanced = async (filters = {}) => {
   const where = { deleted_at: null };
-  if (filters.dept_id)     where.dept_id     = filters.dept_id;
-  if (filters.section_id)  where.section_id  = filters.section_id;
-  if (filters.program_id)  where.program_id  = filters.program_id;
-  if (filters.course_id)   where.course_id   = filters.course_id;
-  if (filters.batch_year)  where.batch_year  = Number(filters.batch_year);
+  if (filters.dept_id) where.dept_id = filters.dept_id;
+  if (filters.section_id) where.section_id = filters.section_id;
+  if (filters.program_id) where.program_id = filters.program_id;
+  if (filters.course_id) where.course_id = filters.course_id;
+  if (filters.batch_year) where.batch_year = Number(filters.batch_year);
 
   const students = await prisma.student.findMany({
     where,
     include: {
-      user:       { select: { email: true, isBlocked: true, createdAt: true } },
+      user: { select: { email: true, isBlocked: true, createdAt: true } },
       department: { select: { name: true } },
-      program:    { select: { name: true } },
-      course:     { select: { name: true } },
+      program: { select: { name: true } },
+      course: { select: { name: true } },
       section: {
         select: {
           name: true, semester: true, batch: true,
@@ -628,7 +631,7 @@ export const exportStudentsAdvanced = async (filters = {}) => {
       s.father_name || "", s.father_phone || "",
       s.mother_name || "", s.mother_phone || "",
       s.department?.name || "", s.program?.name || "",
-      s.course?.name || "", s.section?.name || "",
+      s.branch?.name || "", s.section?.name || "",
       cur?.semester ?? s.section?.semester ?? "",
       s.section?.batch || "", cur?.academic_year || "",
       cur?.status || "ACTIVE",
@@ -692,7 +695,7 @@ export const exportStudentsAdvanced = async (filters = {}) => {
 
   const courseCounts = {};
   students.forEach((s) => {
-    const c = s.course?.name || "Unknown";
+    const c = s.branch?.name || "Unknown";
     courseCounts[c] = (courseCounts[c] || 0) + 1;
   });
 
@@ -757,11 +760,11 @@ export const exportStudentsAdvanced = async (filters = {}) => {
     const promHeaders = ["Name", "Roll No", "Email", "Department", "Course",
       "Current Sem", "Previous Sem", "Academic Year", "Section"];
     const promRows = promoted.map((s) => {
-      const cur  = s.enrollments.find((e) => e.is_current);
+      const cur = s.enrollments.find((e) => e.is_current);
       const prev = s.enrollments.filter((e) => !e.is_current).sort((a, b) => b.semester - a.semester)[0];
       return [
         s.name, s.roll_no || "", s.user?.email || "",
-        s.department?.name || "", s.course?.name || "",
+        s.department?.name || "", s.branch?.name || "",
         cur?.semester ?? "", prev?.semester ?? "",
         cur?.academic_year || "", s.section?.name || "",
       ];
@@ -813,7 +816,7 @@ export const exportStudentsAdvanced = async (filters = {}) => {
     deptAnalysis.push([
       sec.course?.program?.department?.name || "",
       sec.course?.program?.name || "",
-      sec.course?.name || "",
+      sec.branch?.name || "",
       sec.semester,
       sec.name,
       secStudents.filter((s) => {
@@ -848,7 +851,7 @@ export const exportStudentsAdvanced = async (filters = {}) => {
   for (const { section: sec, students: ss } of Object.values(sectionGroups)) {
     const curStatus = (s) => s.enrollments.find((e) => e.is_current)?.status || "ACTIVE";
     secSummaryRows.push([
-      sec?.course?.program?.name || "", sec?.course?.name || "",
+      sec?.course?.program?.name || "", sec?.branch?.name || "",
       sec?.name || "Unknown", sec?.semester || "", sec?.batch || "",
       ss.length,
       ss.filter((s) => curStatus(s) === "ACTIVE").length,
@@ -868,9 +871,9 @@ export const exportStudentsAdvanced = async (filters = {}) => {
   for (const { section: sec, students: ss } of Object.values(sectionGroups)) {
     if (!sec) continue;
     // Use fmtSection export format
-    const prog   = sec.course?.program?.name || "";
-    const course = sec.course?.name || "";
-    const raw    = [prog, course, sec.semester ? `${sec.semester} Sem` : "", sec.name].filter(Boolean).join(" ");
+    const prog = sec.course?.program?.name || "";
+    const course = sec.branch?.name || "";
+    const raw = [prog, course, sec.semester ? `${sec.semester} Sem` : "", sec.name].filter(Boolean).join(" ");
     let sheetName = raw.replace(/[\\/:*?[\]]/g, "").slice(0, 31);
 
     // Deduplicate sheet names

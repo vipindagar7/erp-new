@@ -269,3 +269,44 @@ export const removeFacultyBulk = async (group_id, faculty_ids) => {
   });
   return { removed: r.count };
 };
+
+// ── Faculty-specific group operations ─────────────────────────
+export const createGroupAsFaculty = async (data, actingUser) => {
+  return createGroup({
+    ...data,
+    created_by:      actingUser.id     || null,
+    created_by_role: "FACULTY",
+    scope:           data.scope        || "DEPT",
+    scope_ids:       data.scope_ids    || (actingUser.faculty?.dept_id ? [actingUser.faculty.dept_id] : []),
+    faculty_leads:   data.faculty_leads || [actingUser.faculty?.id].filter(Boolean),
+  }, actingUser.id);
+};
+
+export const canManageGroup = async (group_id, actingUser) => {
+  const group = await prisma.specialGroup.findUnique({ where:{ id: group_id } }).catch(()=>null);
+  if (!group) return false;
+  if (actingUser.is_root) return true;
+  if (group.created_by === actingUser.id) return true;
+  if (group.faculty_leads?.includes(actingUser.faculty?.id)) return true;
+  return ["ADMIN","SUPER_ADMIN","HOD","DEPT_ADMIN"].includes(actingUser.role);
+};
+
+export const addStudentsAsFaculty = async (group_id, student_ids, actingUser) => {
+  const ok = await canManageGroup(group_id, actingUser);
+  if (!ok) throw Object.assign(new Error("Not authorized"), { status:403 });
+  if (actingUser.role === "FACULTY" && actingUser.facultySectionIds?.length) {
+    const allowed = await prisma.student.findMany({
+      where: { id:{ in:student_ids }, section_id:{ in: actingUser.facultySectionIds } },
+      select:{ id:true },
+    });
+    student_ids = allowed.map(s=>s.id);
+    if (!student_ids.length) throw Object.assign(new Error("Students not in your sections"), { status:403 });
+  }
+  return addStudentsById(group_id, student_ids, `Added by faculty`);
+};
+
+export const setGroupFacultyLeads = async (group_id, faculty_ids, actingUser) => {
+  const ok = await canManageGroup(group_id, actingUser);
+  if (!ok) throw Object.assign(new Error("Not authorized"), { status:403 });
+  return prisma.specialGroup.update({ where:{ id: group_id }, data:{ faculty_leads: faculty_ids } });
+};

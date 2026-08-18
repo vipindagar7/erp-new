@@ -1,73 +1,39 @@
 // backend/modules/reports/reports.controller.js
-import {
-  buildStudentsBySectionWorkbook,
-  buildStudentsByDeptWorkbook,
-  buildFacultyWorkbook,
-  buildEnrollmentWorkbook,
-  buildFeedbackWorkbook,
-} from "./reports.service.js";
+import * as svc from "./reports.service.js";
 
-const sendXlsx = async (res, workbook, filename) => {
-  res.setHeader(
-    "Content-Type",
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-  );
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-  await workbook.xlsx.write(res);
-  res.end();
+const sendXlsx = (res, buf, name) => {
+  const b = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  res.setHeader("Content-Type","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  res.setHeader("Content-Disposition",`attachment; filename="${name}"`);
+  res.setHeader("Content-Length", b.length);
+  res.end(b);
+};
+const fail = (res, e, next) => e.status
+  ? res.status(e.status).json({ success:false, message:e.message })
+  : next(e);
+
+// ── Catalog — list all available reports ─────────────────────
+export const getCatalog = (req, res) => {
+  res.json({ success:true, data: svc.REPORT_CATALOG });
 };
 
-export const exportStudentsBySection = async (req, res) => {
+// ── Generic dispatcher ───────────────────────────────────────
+export const generate = async (req, res, next) => {
   try {
-    const { section_id } = req.query;
-    const wb = await buildStudentsBySectionWorkbook(section_id);
-    await sendXlsx(res, wb, "students_by_section.xlsx");
-  } catch (error) {
-    console.error("[Reports] exportStudentsBySection:", error);
-    res.status(500).json({ message: "Export failed" });
-  }
+    const { report_id } = req.params;
+    const filters = { ...req.query, ...req.body };
+    const buf = await svc.generateReport(report_id, filters);
+    const name = `${report_id}-${new Date().toISOString().slice(0,10)}.xlsx`;
+    sendXlsx(res, buf, name);
+  } catch(e) { fail(res,e,next); }
 };
 
-export const exportStudentsByDept = async (req, res) => {
-  try {
-    const { dept_id } = req.query;
-    const wb = await buildStudentsByDeptWorkbook(dept_id);
-    await sendXlsx(res, wb, "students_by_department.xlsx");
-  } catch (error) {
-    console.error("[Reports] exportStudentsByDept:", error);
-    res.status(500).json({ message: "Export failed" });
-  }
-};
-
-export const exportFacultyList = async (req, res) => {
-  try {
-    const wb = await buildFacultyWorkbook();
-    await sendXlsx(res, wb, "faculty_list.xlsx");
-  } catch (error) {
-    console.error("[Reports] exportFacultyList:", error);
-    res.status(500).json({ message: "Export failed" });
-  }
-};
-
-export const exportEnrollmentSummary = async (req, res) => {
-  try {
-    const { academic_year } = req.query;
-    const wb = await buildEnrollmentWorkbook(academic_year);
-    await sendXlsx(res, wb, "enrollment_summary.xlsx");
-  } catch (error) {
-    console.error("[Reports] exportEnrollmentSummary:", error);
-    res.status(500).json({ message: "Export failed" });
-  }
-};
-
-export const exportFeedbackSummary = async (req, res) => {
-  try {
-    const { formId } = req.params;
-    const wb = await buildFeedbackWorkbook(formId);
-    if (!wb) return res.status(404).json({ message: "Feedback form not found" });
-    await sendXlsx(res, wb, `feedback_${formId}.xlsx`);
-  } catch (error) {
-    console.error("[Reports] exportFeedbackSummary:", error);
-    res.status(500).json({ message: "Export failed" });
-  }
-};
+// ── Legacy individual endpoints ──────────────────────────────
+export const studentsAll      = async (req, res, next) => { try { sendXlsx(res, await svc.buildStudentsAllReport(req.query),     `students-all-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const studentsBySection= async (req, res, next) => { try { sendXlsx(res, await svc.buildStudentsBySectionReport(req.query),`students-section-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const studentsByDept   = async (req, res, next) => { try { sendXlsx(res, await svc.buildStudentsByDeptReport(req.query),  `students-dept-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const facultyAll       = async (req, res, next) => { try { sendXlsx(res, await svc.buildFacultyAllReport(req.query),      `faculty-all-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const facultyWorkload  = async (req, res, next) => { try { sendXlsx(res, await svc.buildFacultyWorkloadReport(req.query), `faculty-workload-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const sectionsAll      = async (req, res, next) => { try { sendXlsx(res, await svc.buildSectionsReport(req.query),        `sections-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const sectionSubjects  = async (req, res, next) => { try { sendXlsx(res, await svc.buildSectionSubjectReport(req.query),  `section-subjects-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };
+export const enrollments      = async (req, res, next) => { try { sendXlsx(res, await svc.buildEnrollmentReport(req.query),      `enrollments-${new Date().toISOString().slice(0,10)}.xlsx`); } catch(e) { fail(res,e,next); } };

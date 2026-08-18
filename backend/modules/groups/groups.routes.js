@@ -176,3 +176,33 @@ router.delete("/:id/members/:student_id", authenticate, authorize(...ADMIN), asy
 });
 
 export default router;
+
+
+// Faculty can create a group
+router.post("/my-groups",     authenticate, async (req,res,next) => {
+  try { res.status(201).json({ success:true, data: await svc.createGroupAsFaculty(req.body, req.user) }); }
+  catch(e){ next(e); }
+});
+
+// Faculty can add students (filtered to their sections)
+router.post("/:id/members/faculty-add", authenticate, async (req,res,next) => {
+  try { res.json({ success:true, data: await svc.addStudentsAsFaculty(req.params.id, req.body.student_ids, req.user) }); }
+  catch(e){ next(e); }
+});
+
+// Set faculty leads
+router.post("/:id/faculty-leads", authenticate, async (req,res,next) => {
+  try { res.json({ success:true, data: await svc.setGroupFacultyLeads(req.params.id, req.body.faculty_ids, req.user) }); }
+  catch(e){ next(e); }
+});
+
+// Faculty views their own groups
+router.get("/my-groups", authenticate, async (req,res,next) => {
+  try {
+    const all = await svc.getAllGroups({ ...req.query });
+    const myGroups = (all.groups||all).filter(g =>
+      g.created_by === req.user.id || g.faculty_leads?.includes(req.user.faculty?.id)
+    );
+    res.json({ success:true, data: myGroups });
+  } catch(e){ next(e); }
+});

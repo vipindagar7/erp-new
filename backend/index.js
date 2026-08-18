@@ -17,8 +17,8 @@ import { requestLogger } from "./middlewares/request.logger.js";
 ========================================================= */
 
 import authRoutes from "./modules/auth/auth.route.js";
+import permissionsRouter from "./modules/permissions/permissions.routes.js";
 import sessionRoutes from "./modules/session/session.routes.js";
-
 import auditRoutes from "./modules/audit/audit.routes.js";
 import roleUpgradeRoutes from "./modules/roleUpgrade/role.upgrade.routes.js";
 import studentRoutes from "./modules/student/student.routes.js";
@@ -29,6 +29,10 @@ import subjectRoutes from "./modules/subject/subject.routes.js";
 import sectionRoutes from "./modules/section/section.routes.js";
 import feedbackRoutes from "./modules/feedback/feedback.routes.js";
 import facultyRoutes from "./modules/faculty/faculty.routes.js";
+import branchRoutes from "./modules/branch/branch.routes.js";
+import attendanceRoutes from "./modules/attendance/attendance.routes.js";
+import superAdminRoutes from "./modules/superadmin/superadmin.route.js";
+import roleRouter from "./modules/role/role.routes.js";
 
 import adminRoutes from "./modules/admin/admin.routes.js";
 import notificationRoutes from "./modules/notification/notification.routes.js";
@@ -36,18 +40,49 @@ import notificationRoutes from "./modules/notification/notification.routes.js";
 import adminEnrollRoutes from "./modules/enrollment/enrollment.routes.js";
 import studentEnrollRoutes from "./modules/student/student-enrollment.routes.js";
 import curriculumRoutes from "./modules/curriculum/curriculum.routes.js";
-
+import roomRoutes from "./modules/rooms/rooms.routes.js";
+import timetableRoutes from "./modules/timetable/timetable.routes.js";
 import settingsRoutes from "./modules/settings/settings.routes.js";
 import reportsRoutes from "./modules/reports/reports.routes.js";
 import groupsRoutes from "./modules/groups/groups.routes.js";
 import { logger } from "./utils/logger.js";
 
+// imports (top of file with others)
+import leaveRoutes from "./modules/leave/leave.routes.js";
+import bulkRoutes from "./modules/bulk/bulk.routes.js";
+import uiPermRoutes from "./modules/uiPermissions/ui.permission.routes.js";
+import calendarRouter from "./modules/academic/calendar.routes.js";
+import extraAttendRouter from "./modules/attendance/extra.routes.js";
+import studentLeaveRouter from "./modules/leave/student.leave.routes.js";
+import assignmentRouter from "./modules/assignment/assignment.routes.js";
+import examRouter from "./modules/exam/exam.routes.js";
+import feeRouter from "./modules/fee/fee.routes.js";
+import salaryRouter from "./modules/hr/salary.routes.js";
+import holidayRoutes from "./modules/holiday/holiday.routes.js";
+import skillcardRouter from "./modules/skillcard/skillcard.routes.js";
+import deptScopeRouter from "./modules/admin/deptscope.routes.js";
+import facultyBulkRouter from "./modules/faculty/faculty.bulkops.routes.js";
+import leaveRulesRouter from "./modules/hr/leave-rules.routes.js";
+import salaryCalcRouter from "./modules/hr/salary-calculator.routes.js";
+
+// Middleware
+import { attachDeptScope } from "./middlewares/deptScope.middleware.js";
+
+// Cron
+import { startFreezeCron } from "./utils/freeze.cron.js";
+
+// ── Register middleware (add after authenticate) ──────────
+
 
 import otpRoutes from "./modules/otp/otp.routes.js";
 import erpSettingsRoutes from "./modules/erpSettings/erp.settings.routes.js";
+import customRolesRoutes from "./modules/customRoles/customRoles.route.js";
 import { serveUploads } from "./utils/fileStorage.js";
 import { seedDefaultSettings } from "./modules/erpSettings/erp.settings.service.js";
 
+import rbacRoutes from "./modules/rbac/rbac.routes.js";
+import { loadUserRoles } from "./modules/rbac/rbac.middleware.js";
+import { initializeRoles } from "./modules/rbac/rbac.service.js";
 /* =========================================================
    APP
 ========================================================= */
@@ -195,6 +230,7 @@ app.get("/health", (_req, res) => {
 /* =========================================================
    ROUTES
 ========================================================= */
+app.use(attachDeptScope);  // attach to all authenticated routes
 
 app.use("/api/auth", authRoutes);
 
@@ -213,35 +249,49 @@ app.use("/api/programs", programRoutes);
 app.use("/api/courses", courseRoutes);
 
 app.use("/api/subjects", subjectRoutes);
+app.use("/api/holidays", holidayRoutes);
 
 app.use("/api/sections", sectionRoutes);
-
 app.use("/api/feedback", feedbackRoutes);
-
 app.use("/api/faculty", facultyRoutes);
-
-app.use("/api/admin", adminRoutes);
-
-app.use("/api/notifications", notificationRoutes);
-
-app.use("/api/settings", settingsRoutes);
-
-app.use("/api/reports", reportsRoutes);
-
-app.use("/api/admin/enrollments", adminEnrollRoutes);
-
-app.use("/api/students/enrollments", studentEnrollRoutes);
-
+app.use("/api/superadmin", superAdminRoutes);
+app.use("/api/leave", leaveRoutes);
+app.use("/api/attendance", attendanceRoutes);
+app.use("/api/roles", roleRouter);
 app.use("/api/groups", groupsRoutes);
-
+app.use("/api/bulk", bulkRoutes);
+app.use("/api/ui-permissions", uiPermRoutes);
+app.use("/api/rooms", roomRoutes);
+app.use("/api/timetable", timetableRoutes);
+app.use("/api/admins", adminRoutes);
+app.use("/api/calendar", calendarRouter);
+app.use("/api/attendance/extra", extraAttendRouter);
+app.use("/api/student-leave", studentLeaveRouter);
+app.use("/api/assignments", assignmentRouter);
+app.use("/api/permissions", permissionsRouter);
+app.use("/api/exam", examRouter);
+app.use("/api/fee", feeRouter);
+app.use("/api/hr", salaryRouter);
+app.use("/api/skill-card", skillcardRouter);
+app.use("/api/admin/dept-scope", deptScopeRouter);
+app.use("/api/faculty/bulk", facultyBulkRouter);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/reports", reportsRoutes);
+app.use("/api/admin/enrollments", adminEnrollRoutes);
+app.use("/api/students/enrollments", studentEnrollRoutes);
+app.use("/api/groups", groupsRoutes);
 app.use("/api/curriculum", curriculumRoutes);
-
-
+app.use("/api/branches", branchRoutes);
 app.use("/uploads", serveUploads());
-
 app.use("/api/otp", otpRoutes);
-app.use("/api/erp-settings", erpSettingsRoutes);
+app.use("/api/settings", erpSettingsRoutes);
+app.use("/api/access-roles", customRolesRoutes);
+app.use("/api/hr/leave", leaveRulesRouter);
+app.use("/api/hr/salary", salaryCalcRouter);
 
+// ── Start cron ────────────────────────────────────────────
+startFreezeCron();
 
 /* =========================================================
    404 HANDLER
@@ -290,6 +340,14 @@ app.use((err, req, res, _next) => {
     });
 });
 
+
+// rbac
+app.use("/api/rbac", rbacRoutes);
+app.use(loadUserRoles);  // ← add this AFTER cookie-parser/auth setup
+initializeRoles().catch(console.error);
+
+
+
 /* =========================================================
    SERVER START
 ========================================================= */
@@ -298,7 +356,7 @@ const startServer = async () => {
     try {
 
         await connectDB();
-        // await seedDefaultSettings();
+        await seedDefaultSettings(); // idempotent — safe to run on every boot
 
         app.listen(PORT, () => {
             logger.info(`🚀 ERP Backend running on port ${PORT}`);

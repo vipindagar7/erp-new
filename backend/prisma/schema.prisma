@@ -1,44 +1,45 @@
 // ═══════════════════════════════════════════════════════════════
-// Complete merged schema — RBAC + Faculty HR + OTP + ERP Settings
-// Replace backend/prisma/schema.prisma with this file
-// Then run: npx prisma migrate dev --name merge_faculty_hr_otp_settings
+// EIT ERP Schema v3.0
+// Hierarchy: Department → Program → Branch → Section
+// V3 additions: Room/Lab master, Timetable, PeriodConfig,
+//               Substitution, FacultyWorkload
 // ═══════════════════════════════════════════════════════════════
 
 generator client {
-  provider = "prisma-client-js"
+  provider        = "prisma-client-js"
+  output          = "../generated/prisma"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
-// ─── RBAC Core ────────────────────────────────────────────────
-
+// ─── RBAC ─────────────────────────────────────────────────────
 model Role {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  label       String
-  description String?
-  is_system   Boolean  @default(false)
-  is_active   Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
+  id              String           @id @default(uuid())
+  name            String           @unique
+  label           String
+  description     String?
+  is_system       Boolean          @default(false)
+  is_active       Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
   rolePermissions RolePermission[]
   userRoles       UserRole[]
   activeUsers     User[]           @relation("ActiveRole")
+  facultyPrimary   Faculty[] @relation("FacultyPrimaryRole")
+  facultySecondary Faculty[] @relation("FacultySecondaryRole")
 }
 
 model Permission {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  module      String
-  action      String
-  label       String
-  description String?
-  createdAt   DateTime @default(now())
-
+  id              String           @id @default(uuid())
+  key             String           @unique
+  module          String
+  action          String
+  label           String
+  description     String?
+  createdAt       DateTime         @default(now())
   rolePermissions RolePermission[]
   userPermissions UserPermission[]
 
@@ -92,6 +93,43 @@ model UserPermission {
   @@index([user_id])
 }
 
+// ─── User ─────────────────────────────────────────────────────
+model User {
+  id                    String               @id @default(uuid())
+  email                 String               @unique
+  passwordHash          String
+  isBlocked             Boolean              @default(false)
+  active_role_id        String?
+  is_root               Boolean              @default(false)
+  must_change_password  Boolean              @default(false)
+  pin_hash              String?
+  pin_set_at            DateTime?
+  requires_2fa          Boolean              @default(false)
+  first_login_completed Boolean              @default(false)
+  role                  String               @default("STUDENT")
+  permissions           String[]             @default([])
+  extra_roles           String[]             @default([])
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  userRoles             UserRole[]
+  userPermissions       UserPermission[]
+  userSessions          UserSession[]
+  loginHistory          LoginHistory[]
+  activeRole            Role?                @relation("ActiveRole", fields: [active_role_id], references: [id])
+  admin                 Admin?
+  auditLogs             AuditLog[]
+  faculty               Faculty?
+  notifications         Notification[]
+  passwordResetTokens   PasswordResetToken[]
+  student               Student?
+  otpTokens             OtpToken[]
+  userTotp              UserTotp?
+  roomStaff             RoomStaff[] // V3
+  permissionGroups      UserPermissionGroup[]
+
+  @@index([is_root])
+}
+
 model UserSession {
   id                 String    @id @default(uuid())
   user_id            String
@@ -105,6 +143,8 @@ model UserSession {
   os                 String?
   location           String?
   is_active          Boolean   @default(true)
+  is_locked          Boolean   @default(false)
+  locked_at          DateTime?
   last_active_at     DateTime  @default(now())
   expires_at         DateTime
   refresh_expires_at DateTime
@@ -120,7 +160,7 @@ model UserSession {
 }
 
 model LoginHistory {
-  id          String    @id @default(uuid())
+  id          String   @id @default(uuid())
   user_id     String?
   email       String
   status      String
@@ -132,8 +172,8 @@ model LoginHistory {
   os          String?
   location    String?
   session_id  String?
-  createdAt   DateTime  @default(now())
-  user        User?     @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  user        User?    @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
   @@index([user_id])
   @@index([email])
@@ -141,89 +181,6 @@ model LoginHistory {
   @@index([createdAt])
   @@index([ip_address])
 }
-
-// ── OTP Tokens ────────────────────────────────────────────────
-model OtpToken {
-  id         String   @id @default(uuid())
-  user_id    String
-  purpose    String
-  otp_hash   String
-  attempts   Int      @default(0)
-  used       Boolean  @default(false)
-  expires_at DateTime
-  createdAt  DateTime @default(now())
-  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  @@index([user_id, purpose])
-  @@index([expires_at])
-}
-
-// ── User TOTP ─────────────────────────────────────────────────
-model UserTotp {
-  id         String   @id @default(uuid())
-  user_id    String   @unique
-  secret     String
-  is_enabled Boolean  @default(false)
-  verified   Boolean  @default(false)
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
-  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
-}
-
-// ── ERP System Settings ───────────────────────────────────────
-model ErpSetting {
-  id          String   @id @default(uuid())
-  key         String   @unique
-  value       String
-  label       String
-  description String?
-  category    String
-  data_type   String   @default("string")
-  is_system   Boolean  @default(false)
-  updated_by  String?
-  updatedAt   DateTime @updatedAt
-  createdAt   DateTime @default(now())
-
-  @@index([category])
-}
-
-// ─── User ─────────────────────────────────────────────────────
-model User {
-  id             String    @id @default(uuid())
-  email          String    @unique
-  passwordHash   String
-  isBlocked      Boolean   @default(false)
-  active_role_id String?
-
-  // Legacy fields — remove in Phase 5
-  role        String   @default("STUDENT")
-  permissions String[] @default([])
-  extra_roles String[] @default([])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  // RBAC
-  userRoles       UserRole[]
-  userPermissions UserPermission[]
-  userSessions    UserSession[]
-  loginHistory    LoginHistory[]
-  activeRole      Role?            @relation("ActiveRole", fields: [active_role_id], references: [id])
-
-  // OTP / TOTP
-  otpTokens OtpToken[]
-  totp      UserTotp?
-
-  // Existing
-  admin               Admin?
-  auditLogs           AuditLog[]
-  faculty             Faculty?
-  notifications       Notification[]
-  passwordResetTokens PasswordResetToken[]
-  student             Student?
-}
-
-// ─── Existing models ──────────────────────────────────────────
 
 model PasswordResetToken {
   id        String   @id @default(uuid())
@@ -244,74 +201,137 @@ model Admin {
   user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
 }
 
+// ─── Academic Session ─────────────────────────────────────────
 model AcademicSession {
-  id         String   @id @default(uuid())
-  name       String   @unique
-  label      String?
-  start_date DateTime
-  end_date   DateTime
-  is_current Boolean  @default(false)
-  is_locked  Boolean  @default(false)
-  created_by String?
-  notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  enrollments           StudentEnrollment[]
-  sectionSubjects       SectionSubject[]
-  sectionHistories      SectionHistory[]
-  sectionSubjectHistory SectionSubjectHistory[]
-  curriculumSubjects    CurriculumSubject[]
+  id                     String                  @id @default(uuid())
+  code                   String                  @unique
+  name                   String                  @unique
+  label                  String?
+  start_date             DateTime
+  end_date               DateTime
+  is_current             Boolean                 @default(false)
+  is_locked              Boolean                 @default(false)
+  created_by             String?
+  notes                  String?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  enrollments            StudentEnrollment[]
+  sectionSubjects        SectionSubject[]
+  sectionHistories       SectionHistory[]
+  sectionSubjectHistory  SectionSubjectHistory[]
+  curriculumSubjects     CurriculumSubject[]
+  academicPeriods        AcademicPeriod[]
+  periodConfigs          PeriodConfig[] // V3
+  timetables             Timetable[] // V3
+  workloads              FacultyWorkload[] // V3
+  attendanceFreezeRules  AttendanceFreezeRule[]
+  studentAttendance      StudentAttendance[]
+  timetableEntryLogs     TimetableEntryLog[]
+  timetableSnapshots     TimetableSnapshot[]
+  facultySubjectRequests FacultySubjectRequest[]
+  courseStructures       CourseStructure[]
+  topicTaughts           TopicTaught[]
+  specialSessions        SpecialSession[]
+  calendarEvents         AcademicCalendarEvent[]
+  extraAttendance        ExtraAttendance[]
+  assignments            Assignment[]
+  exams                  Exam[]
+  feeStructures          FeeStructure[]
+  feePayments            FeePayment[]
+  leavePolicies          LeaveRulePolicy[]
+  leaveSlots             LeaveSlot[]
+  salaryCycles           SalaryCycle[]
+  facultyLeaveQuotas     FacultyLeaveQuota[]
+  holidays               Holiday[]
 
   @@index([is_current])
+  @@index([code])
 }
 
+// ─── Department ───────────────────────────────────────────────
 model Department {
-  id            String              @id @default(uuid())
-  name          String              @unique
-  deleted_at    DateTime?
-  createdAt     DateTime            @default(now())
-  updatedAt     DateTime            @updatedAt
-  faculties     Faculty[]
-  feedbackForms FeedbackForm[]
-  programs      Program[]
-  students      Student[]
-  enrollments   StudentEnrollment[]
+  id               String              @id @default(uuid())
+  code             String              @unique
+  name             String              @unique
+  hod_id           String?
+  description      String?
+  website          String?
+  phone            String?
+  established_year Int?
+  deleted_at       DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  hod              Faculty?            @relation("DepartmentHOD", fields: [hod_id], references: [id])
+  faculties        Faculty[]
+  programs         Program[]
+  students         Student[]
+  enrollments      StudentEnrollment[]
+  feedbackForms    FeedbackForm[]
+  roomsLabs        Room[]
+  adminScopes      AdminDeptScope[] // V3 (renamed from rooms to avoid conflict with old String[] field)
+  timetables       Timetable[] // V3
+  holidays         Holiday[]
+
+  @@index([code])
 }
 
+// ─── Program ──────────────────────────────────────────────────
 model Program {
-  id                 String              @id @default(uuid())
+  id                 String               @id @default(uuid())
+  code               String               @unique
   name               String
   dept_id            String
+  max_semesters      Int?
+  duration_years     Int?
+  degree_type        String?
+  accreditation      String?
+  intake_capacity    Int?
+  description        String?
   deleted_at         DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  department         Department          @relation(fields: [dept_id], references: [id], onDelete: Cascade)
-  courses            Course[]
-  curriculumSubjects CurriculumSubject[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  department         Department           @relation(fields: [dept_id], references: [id], onDelete: Cascade)
+  branches           Branch[]
   students           Student[]
   enrollments        StudentEnrollment[]
-
-  @@index([dept_id])
-}
-
-model Course {
-  id                 String              @id @default(uuid())
-  name               String
-  program_id         String
-  deleted_at         DateTime?
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  program            Program             @relation(fields: [program_id], references: [id], onDelete: Cascade)
   curriculumSubjects CurriculumSubject[]
   feedbackForms      FeedbackForm[]
-  sections           Section[]
-  students           Student[]
-  enrollments        StudentEnrollment[]
+  affiliations       ProgramAffiliation[]
 
-  @@index([program_id])
+  @@index([dept_id])
+  @@index([code])
 }
 
+// ─── Branch ───────────────────────────────────────────────────
+model Branch {
+  id                       String               @id @default(uuid())
+  code                     String               @unique
+  name                     String
+  program_id               String
+  description              String?
+  intake_capacity          Int?
+  total_semesters_override Int?
+  has_combined_first_year  Boolean              @default(false)
+  start_session            String?
+  end_session              String?
+  discontinued_at          DateTime?
+  discontinued_reason      String?
+  discontinued_by          String?
+  deleted_at               DateTime?
+  createdAt                DateTime             @default(now())
+  updatedAt                DateTime             @updatedAt
+  program                  Program              @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  sections                 Section[]
+  students                 Student[]
+  enrollments              StudentEnrollment[]
+  affiliations             ProgramAffiliation[]
+
+  @@index([program_id])
+  @@index([code])
+  @@index([discontinued_at])
+}
+
+// ─── Subject ──────────────────────────────────────────────────
 model Subject {
   id                    String                  @id @default(uuid())
   name                  String
@@ -327,26 +347,79 @@ model Subject {
   sectionSubjects       SectionSubject[]        @relation("SectionSubjectSubject")
   sectionSubjectHistory SectionSubjectHistory[] @relation("SubjectSubjectHistory")
   students              StudentSubject[]
+  roomSubjects          RoomSubject[] // V3
+  timetableEntries      TimetableEntry[] // V3
+  workloads             FacultyWorkload[] // V3
+  studentAttendance     StudentAttendance[]
+  courseStructures      CourseStructure[]
+  topicsTaught          TopicTaught[]
+  subjectRequests       FacultySubjectRequest[]
+  assignments           Assignment[]
+  examSchedules         ExamSchedule[]
+  examMarks             ExamMark[]
+  questionPapers        QuestionPaper[]
+
+  @@index([code])
 }
 
+// ─── Section ──────────────────────────────────────────────────
 model Section {
   id                    String                  @id @default(uuid())
+  code                  String                  @unique
   name                  String
-  course_id             String
+  branch_id             String
   semester              Int
   batch                 String
+  batch_year            Int?
+  academic_year         String?
+  is_combined           Boolean                 @default(false)
   class_coordinator_id  String?
   status                String                  @default("ACTIVE")
+  capacity              Int?
+  description           String?
   room_no               String?
   deleted_at            DateTime?
-  feedbackForms         FeedbackForm[]
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  branch                Branch                  @relation(fields: [branch_id], references: [id], onDelete: Cascade)
   class_coordinator     Faculty?                @relation("SectionCoordinator", fields: [class_coordinator_id], references: [id])
-  course                Course                  @relation(fields: [course_id], references: [id])
+  students              Student[]
+  enrollments           StudentEnrollment[]
   sectionSubjects       SectionSubject[]        @relation("SectionSubjectSection")
   sectionSubjectHistory SectionSubjectHistory[] @relation("SectionSubjectHistory")
   sectionHistory        SectionHistory[]        @relation("SectionHistory")
-  students              Student[]
-  enrollments           StudentEnrollment[]
+  studentSectionHistory StudentSectionHistory[]
+  feedbackForms         FeedbackForm[]
+  timetable             Timetable? // V3
+  workloads             FacultyWorkload[] // V3
+  studentAttendance     StudentAttendance[]
+  timetableEntryLogs    TimetableEntryLog[]     @relation("EntryLogSection")
+  timetableSnapshots    TimetableSnapshot[]     @relation("SnapshotSection")
+  courseStructures      CourseStructure[]
+  topicTaughts          TopicTaught[]
+
+  @@index([branch_id])
+  @@index([code])
+  @@index([semester])
+  @@index([status])
+}
+
+model StudentSectionHistory {
+  id                String   @id @default(uuid())
+  student_id        String
+  from_section_id   String?
+  to_section_id     String
+  from_section_code String?
+  to_section_code   String?
+  reason            String?
+  changed_by        String?
+  changed_by_name   String?
+  createdAt         DateTime @default(now())
+  student           Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  to_section        Section  @relation(fields: [to_section_id], references: [id])
+
+  @@index([student_id])
+  @@index([createdAt])
 }
 
 model SectionSubject {
@@ -364,6 +437,7 @@ model SectionSubject {
 
   @@unique([session_id, section_id, subject_id])
   @@index([session_id])
+  @@index([section_id])
 }
 
 model SectionSubjectHistory {
@@ -372,6 +446,7 @@ model SectionSubjectHistory {
   section_id String
   subject_id String
   faculty_id String?
+  facultyId  String?
   action     String
   reason     String?
   prev_data  Json?
@@ -381,6 +456,7 @@ model SectionSubjectHistory {
   session    AcademicSession @relation(fields: [session_id], references: [id])
   section    Section         @relation("SectionSubjectHistory", fields: [section_id], references: [id], onDelete: Cascade)
   subject    Subject         @relation("SubjectSubjectHistory", fields: [subject_id], references: [id], onDelete: Cascade)
+  faculty    Faculty?        @relation(fields: [facultyId], references: [id])
 
   @@index([session_id])
   @@index([section_id])
@@ -405,6 +481,8 @@ model SectionHistory {
   prev_batch                String?
   prev_class_coordinator_id String?
   prev_coordinator_name     String?
+  prev_subjects             Json?
+  new_subjects              Json?
   changed_by                String?
   changed_by_name           String?
   changed_by_role           String?
@@ -419,59 +497,119 @@ model SectionHistory {
   @@index([createdAt])
 }
 
+// ─── Student ──────────────────────────────────────────────────
 model Student {
-  id                  String                @id @default(uuid())
-  user_id             String                @unique
-  name                String
-  first_name          String
-  last_name           String
-  roll_no             String?               @unique
-  enrollment_no       String?               @unique
-  dob                 DateTime?
-  gender              String?
-  phone               String?
-  father_name         String?
-  mother_name         String?
-  father_phone        String?
-  mother_phone        String?
-  admission_year      Int?
-  batch_year          Int?
-  session             String?
-  address             String?
-  city                String?
-  state               String?
-  pincode             String?
-  dept_id             String
-  section_id          String
-  course_id           String
-  program_id          String
-  status              String                @default("ACTIVE")
-  aadhar_no           String?
-  category            String?
-  group               String?
-  mode_of_admission   String?
-  pan_no              String?
-  personal_email      String?
-  religion            String?
-  group_no            String?               @default("null")
-  deleted_at          DateTime?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
-  feedbackForms       FeedbackFormStudent[]
-  feedbackResponses   FeedbackResponse[]
-  specialGroupMembers SpecialGroupMember[]
-  course              Course                @relation(fields: [course_id], references: [id])
-  department          Department            @relation(fields: [dept_id], references: [id])
-  program             Program               @relation(fields: [program_id], references: [id])
-  section             Section               @relation(fields: [section_id], references: [id])
-  user                User                  @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  enrollments         StudentEnrollment[]
-  subjects            StudentSubject[]
+  id                 String    @id @default(uuid())
+  code               String?   @unique
+  user_id            String    @unique
+  name               String
+  first_name         String
+  last_name          String?
+  roll_no            String?   @unique
+  university_roll_no String?   @unique
+  enrollment_no      String?   @unique
+  dob                DateTime?
+  gender             String?
+  phone              String?
+  father_name        String?
+  mother_name        String?
+  father_phone       String?
+  mother_phone       String?
+  admission_year     Int?
+  batch_year         Int?
+  session            String?
+  address            String?
+  city               String?
+  state              String?
+  pincode            String?
+  dept_id            String?
+  program_id         String?
+  branch_id          String?
+  section_id         String?
+  status             String    @default("ACTIVE")
+  aadhar_no          String?
+  category           String?
+  group              String?
+  mode_of_admission  String?
+  pan_no             String?
+  personal_email     String?
+  religion           String?
+  group_no           String?
+  deleted_at         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  blood_group        String?
+  photo_url          String?
+  emergency_contact  String?
+  emergency_phone    String?
+  emergency_relation String?
+  father_aadhar      String?
+  mother_aadhar      String?
+  father_occupation  String?
+  mother_occupation  String?
+  tenth_percentage   Float?
+  twelfth_percentage Float?
+  lateral_entry      Boolean   @default(false)
+  is_alumni          Boolean   @default(false)
+  is_hosteller       Boolean   @default(false)
+  is_using_transport Boolean   @default(false)
+  alt_contact_number String?
+  biometric_id       String?   @unique
+  nick_name          String?
+  admission_date     String?
+
+  department            Department?              @relation(fields: [dept_id], references: [id])
+  program               Program?                 @relation(fields: [program_id], references: [id])
+  branch                Branch?                 @relation(fields: [branch_id], references: [id])
+  section               Section?                @relation(fields: [section_id], references: [id])
+  user                  User                    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  enrollments           StudentEnrollment[]
+  subjects              StudentSubject[]
+  sectionHistory        StudentSectionHistory[]
+  studentHistories      StudentHistory[]
+  feedbackForms         FeedbackFormStudent[]
+  feedbackResponses     FeedbackResponse[]
+  specialGroupMembers   SpecialGroupMember[]
+  // Leave
+  studentLeaves         StudentLeave[]          @relation("StudentLeaves")
+  // Attendance
+  attendance            StudentAttendance[]
+  extraAttendance       ExtraAttendance[]
+  // Assignment
+  assignmentSubmissions AssignmentSubmission[]
+  assignmentGrades      AssignmentGrade[]
+  // Exam
+  examSeatings          ExamSeating[]
+  hallTickets           HallTicket[]
+  examMarks             ExamMark[]
+  // Fee
+  feePayments           FeePayment[]
+  // Skill Card
+  skillCard             StudentSkillCard?
+  skillCardEntries      SkillCardEntry[]
 
   @@index([dept_id])
-  @@index([section_id])
-  @@index([course_id])
   @@index([program_id])
+  @@index([branch_id])
+  @@index([section_id])
+  @@index([code])
+  @@index([status])
+}
+
+model StudentHistory {
+  id              String   @id @default(uuid())
+  student_id      String
+  changed_by      String?
+  changed_by_name String?
+  action          String
+  changed_fields  String[] @default([])
+  prev_data       Json?
+  new_data        Json?
+  createdAt       DateTime @default(now())
+  student         Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([student_id])
+  @@index([createdAt])
 }
 
 model StudentSubject {
@@ -484,121 +622,79 @@ model StudentSubject {
   @@unique([student_id, subject_id])
 }
 
+// ─── Student Enrollment ───────────────────────────────────────
 model StudentEnrollment {
-  id            String          @id @default(uuid())
-  session_id    String
-  student_id    String
-  section_id    String
-  academic_year String
-  semester      Int
-  batch_year    Int             @default(0)
-  dept_id       String
-  course_id     String
-  program_id    String
-  status        String          @default("ACTIVE")
-  is_current    Boolean         @default(true)
-  enrolled_at   DateTime        @default(now())
-  completed_at  DateTime?
-  remarks       String?
-  session       AcademicSession @relation(fields: [session_id], references: [id])
-  course        Course          @relation(fields: [course_id], references: [id])
-  department    Department      @relation(fields: [dept_id], references: [id])
-  program       Program         @relation(fields: [program_id], references: [id])
-  section       Section         @relation(fields: [section_id], references: [id])
-  student       Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  id                       String          @id @default(uuid())
+  session_id               String
+  student_id               String
+  section_id               String
+  academic_year            String
+  semester                 Int
+  batch_year               Int             @default(0)
+  dept_id                  String
+  program_id               String
+  branch_id                String?
+  status                   String          @default("ACTIVE")
+  is_current               Boolean         @default(true)
+  enrolled_at              DateTime        @default(now())
+  completed_at             DateTime?
+  remarks                  String?
+  promoted_from_section_id String?
+  promoted_to_section_id   String?
+  promoted_by              String?
+  promoted_at              DateTime?
+  demotion_reason          String?
+  session                  AcademicSession @relation(fields: [session_id], references: [id])
+  student                  Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  section                  Section         @relation(fields: [section_id], references: [id])
+  department               Department      @relation(fields: [dept_id], references: [id])
+  program                  Program         @relation(fields: [program_id], references: [id])
+  branch                   Branch?         @relation(fields: [branch_id], references: [id])
 
   @@unique([session_id, student_id])
   @@index([session_id])
   @@index([student_id])
   @@index([section_id])
   @@index([is_current])
+  @@index([semester])
   @@index([academic_year, semester])
+  @@index([status])
 }
 
-model SpecialGroup {
-  id            String               @id @default(uuid())
-  name          String
-  description   String?
-  type          String               @default("OTHER")
-  created_by    String?
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
-  feedbackForms FeedbackForm[]
-  members       SpecialGroupMember[]
-}
-
-model SpecialGroupMember {
-  id         String       @id @default(uuid())
-  group_id   String
-  student_id String
-  addedAt    DateTime     @default(now())
-  group      SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
-  student    Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
-
-  @@unique([group_id, student_id])
-}
-
-model FacultyGroup {
-  id          String               @id @default(uuid())
-  name        String
-  description String?
-  type        String               @default("OTHER")
-  created_by  String?
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
-  members     FacultyGroupMember[]
-
-  @@index([type])
-}
-
-model FacultyGroupMember {
-  id         String       @id @default(uuid())
-  group_id   String
-  faculty_id String
-  addedAt    DateTime     @default(now())
-  faculty    Faculty      @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
-  group      FacultyGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
-
-  @@unique([group_id, faculty_id])
-  @@index([group_id])
-}
-
-// ── Faculty — with all new HR fields ─────────────────────────
+// ─── Faculty ──────────────────────────────────────────────────
 model Faculty {
-  id            String    @id @default(uuid())
-  user_id       String    @unique
-  name          String
-  first_name    String?
-  last_name     String?
-  emp_id        String?   @unique
-  designation   String?
-  phone         String?
-  dept_id       String?
-  dob           DateTime?
-  gender        String?
-  joining_date  DateTime?
-  aadhar_no     String?
-  category      String?
-  employee_type String?
-  nick_name     String?
-  pan_no        String?
-  personal_email String?
-  religion      String?
-  status        String?   @default("ACTIVE")
-  deleted_at    DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-
-  // ── New HR / Profile fields ───────────────────────────────
+  id                     String    @id @default(uuid())
+  user_id                String    @unique
+  name                   String
+  first_name             String?
+  last_name              String?
+  emp_id                 String?   @unique
+  employee_code          String?   @unique
+  designation            String?
+  phone                  String?
+  dept_id                String?
+  dob                    DateTime?
+  gender                 String?
+  joining_date           DateTime?
+  status                 String?   @default("ACTIVE")
+  deleted_at             DateTime?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
   photo_url              String?
   blood_group            String?
   emergency_contact      String?
   emergency_phone        String?
   emergency_relation     String?
+  aadhar_no              String?
+  category               String?
+  pan_no                 String?
+  personal_email         String?
+  religion               String?
+  nick_name              String?
   qualification          String?
   specialization         String?
   experience_years       Int?
-  employee_code          String?   @unique
+  employee_type          String?
   salary_grade           String?
   salary_encrypted       String?
   bank_account_encrypted String?
@@ -606,17 +702,104 @@ model Faculty {
   bank_ifsc              String?
   pf_number              String?
   esi_number             String?
+  is_teaching            Boolean   @default(true)
+  address                String?
+  city                   String?
+  state                  String?
+  pincode                String?
+  retirement_date        DateTime?
+  resignation_date       DateTime?
+  exit_reason            String?
+  // Campus residence
+  lives_on_campus        Boolean   @default(false)
+  accommodation_type     String? // QUARTER | FLAT | HOSTEL | OUTSIDE
+  campus_quarter_no      String? // quarter/room number
+  campus_address         String? // full campus address
+  // Subject preferences
+  subject_pref_1         String? // subject_id preferred
+  subject_pref_2         String? // subject_id preferred
+  // RBAC role
+  erp_role               String? // FACULTY | DEPT_ADMIN | EXAM_COORD | ACCOUNT | LIBRARY | LAB_INCHARGE
+  biometric_device_id    String?
+  // Roles — both from Role table (custom roles)
+  primary_role_id        String? // main role e.g. "Faculty", "HOD", "Lab Incharge"
+  secondary_role_id      String? // optional e.g. "TT Coordinator", "Exam Coordinator"
+  basic_salary           Float? // Used for salary slip generation
 
-  // Relations
-  department            Department?          @relation(fields: [dept_id], references: [id])
-  user                  User                 @relation(fields: [user_id], references: [id], onDelete: Cascade)
-  facultyGroups         FacultyGroupMember[]
-  subjects              FacultySubject[]
-  feedbackForms         FeedbackForm[]
-  coordinating_sections Section[]            @relation("SectionCoordinator")
-  sectionSubjects       SectionSubject[]     @relation("SectionSubjectFaculty")
+  hod_of_departments      Department[]            @relation("DepartmentHOD")
+  department              Department?             @relation(fields: [dept_id], references: [id])
+  user                    User                    @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  facultyGroups           FacultyGroupMember[]
+  subjects                FacultySubject[]
+  feedbackForms           FeedbackForm[]
+  coordinating_sections   Section[]               @relation("SectionCoordinator")
+  sectionSubjects         SectionSubject[]        @relation("SectionSubjectFaculty")
+  sectionSubjectHistory   SectionSubjectHistory[]
+  facultyCareerHistories  FacultyCareerHistory[]
+  leaveRequests           LeaveRequest[]
+  leaveApprovalFlow       LeaveApprovalFlow?
+  // V3 additions
+  workloads               FacultyWorkload[]
+  timetableEntries        TimetableEntry[]
+  substitutionsGiven      Substitution[]          @relation("OriginalFaculty")
+  substitutionsTaken      Substitution[]          @relation("SubstituteFaculty")
+  roomStaff               RoomStaff[]
+  // Leave relations
+  leavePolicy             FacultyLeavePolicy?
+  leaveApprovalWorkflow   LeaveApprovalWorkflow?  @relation("FacultyApprovalWorkflow")
+  leaveApps               LeaveApplication[]      @relation("FacultyLeaveApps")
+  leaveApprovalSteps      LeaveApprovalStep[]     @relation("LeaveStepApprover")
+  leaveSubstOriginal      LeaveSubstitution[]     @relation("SubstOriginal")
+  leaveSubstFaculty       LeaveSubstitution[]     @relation("SubstFaculty")
+  // Attendance
+  biometricAttendance     FacultyAttendance[]
+  studentAttendanceMarked StudentAttendance[]
+  courseStructures        CourseStructure[]
+  topicsTaught            TopicTaught[]
+  facultySubjectRequests  FacultySubjectRequest[]
+  // Phase 1 back-relations
+  qualifications          FacultyQualification[]
+  primaryRole             Role?                   @relation("FacultyPrimaryRole", fields: [primary_role_id], references: [id])
+  secondaryRole           Role?                   @relation("FacultySecondaryRole", fields: [secondary_role_id], references: [id])
+  assignments             Assignment[]
+  questionPapers          QuestionPaper[]
+  salarySlips             SalarySlip[]
+  leaveBalances           LeaveBalance[]
+  leaveQuotas             FacultyLeaveQuota[]
 
   @@index([dept_id])
+  @@index([emp_id])
+}
+
+// ─── Faculty Career History ───────────────────────────────────
+model FacultyCareerHistory {
+  id                String    @id @default(uuid())
+  faculty_id        String
+  action            String
+  prev_value        String?
+  new_value         String?
+  prev_designation  String?
+  new_designation   String?
+  prev_salary_grade String?
+  new_salary_grade  String?
+  prev_dept_id      String?
+  new_dept_id       String?
+  prev_status       String?
+  new_status        String?
+  changed_fields    String[]  @default([])
+  prev_data         Json?
+  new_data          Json?
+  effective_date    DateTime?
+  reason            String?
+  documents         String[]  @default([])
+  changed_by        String?
+  changed_by_name   String?
+  createdAt         DateTime  @default(now())
+  faculty           Faculty   @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+
+  @@index([faculty_id])
+  @@index([action])
+  @@index([createdAt])
 }
 
 model FacultySubject {
@@ -629,6 +812,303 @@ model FacultySubject {
   @@unique([faculty_id, subject_id])
 }
 
+// ─── Faculty Leave ────────────────────────────────────────────
+model LeaveRequest {
+  id               String              @id @default(uuid())
+  faculty_id       String
+  leave_type       String
+  from_date        DateTime
+  to_date          DateTime
+  total_days       Float
+  reason           String
+  documents        String[]            @default([])
+  status           String              @default("PENDING")
+  current_level    Int                 @default(1)
+  remarks          String?
+  rejection_reason String?
+  cancelled_by     String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  faculty          Faculty             @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  approvalSteps    LeaveApprovalStep[]
+
+  @@index([faculty_id])
+  @@index([status])
+  @@index([from_date])
+}
+
+model LeaveApprovalFlow {
+  id         String   @id @default(uuid())
+  faculty_id String   @unique
+  chain      Json     @default("[]")
+  created_by String?
+  updatedAt  DateTime @updatedAt
+  faculty    Faculty  @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+}
+
+// ─── UI Permissions ───────────────────────────────────────────
+model UIPermission {
+  id          String   @id @default(uuid())
+  module      String
+  action      String
+  role        String?
+  is_hidden   Boolean  @default(false)
+  is_disabled Boolean  @default(false)
+  updated_by  String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@unique([module, action, role])
+  @@index([module])
+  @@index([role])
+}
+
+// ─── Special Groups ───────────────────────────────────────────
+model SpecialGroup {
+  id                 String                   @id @default(uuid())
+  name               String
+  description        String?
+  type               String                   @default("OTHER")
+  created_by         String?
+  head_id            String?
+  is_active          Boolean                  @default(true)
+  deleted_at         DateTime?
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  members            SpecialGroupMember[]
+  feedbackForms      FeedbackForm[]
+  announcements      GroupAnnouncement[]
+  attendanceRequests GroupAttendanceRequest[]
+  tasks              GroupTask[]
+  polls              GroupPoll[]
+  files              GroupFile[]
+  notices            GroupNotice[]
+  roomBookings       GroupRoomBooking[]
+}
+
+model SpecialGroupMember {
+  id         String       @id @default(uuid())
+  group_id   String
+  student_id String
+  role       String       @default("MEMBER")
+  addedAt    DateTime     @default(now())
+  addedBy    String?
+  group      SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  student    Student      @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, student_id])
+}
+
+model FacultyGroup {
+  id          String               @id @default(uuid())
+  name        String
+  description String?
+  type        String               @default("OTHER")
+  created_by  String?
+  head_id     String?
+  is_active   Boolean              @default(true)
+  deleted_at  DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+  members     FacultyGroupMember[]
+
+  @@index([type])
+}
+
+model FacultyGroupMember {
+  id         String       @id @default(uuid())
+  group_id   String
+  faculty_id String
+  role       String       @default("MEMBER")
+  addedAt    DateTime     @default(now())
+  addedBy    String?
+  faculty    Faculty      @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  group      FacultyGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@unique([group_id, faculty_id])
+  @@index([group_id])
+}
+
+// ─── Group Features ───────────────────────────────────────────
+model GroupAnnouncement {
+  id         String       @id @default(uuid())
+  group_id   String
+  posted_by  String
+  title      String
+  body       String
+  priority   String       @default("MEDIUM")
+  is_pinned  Boolean      @default(false)
+  deleted_at DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+  group      SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([group_id])
+  @@index([createdAt])
+}
+
+model GroupAttendanceRequest {
+  id           String       @id @default(uuid())
+  group_id     String
+  requested_by String
+  event_name   String
+  event_date   DateTime
+  from_time    String?
+  to_time      String?
+  venue        String?
+  reason       String?
+  status       String       @default("PENDING")
+  approved_by  String?
+  approved_at  DateTime?
+  remarks      String?
+  createdAt    DateTime     @default(now())
+  group        SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([group_id])
+  @@index([status])
+}
+
+model GroupTask {
+  id          String       @id @default(uuid())
+  group_id    String
+  created_by  String
+  title       String
+  description String?
+  due_date    DateTime?
+  priority    String       @default("MEDIUM")
+  status      String       @default("OPEN")
+  assigned_to String[]     @default([])
+  deleted_at  DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  group       SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([group_id])
+  @@index([status])
+}
+
+model GroupPoll {
+  id           String              @id @default(uuid())
+  group_id     String
+  created_by   String
+  question     String
+  poll_type    String              @default("SINGLE")
+  ends_at      DateTime?
+  is_anonymous Boolean             @default(false)
+  is_active    Boolean             @default(true)
+  deleted_at   DateTime?
+  createdAt    DateTime            @default(now())
+  group        SpecialGroup        @relation(fields: [group_id], references: [id], onDelete: Cascade)
+  choices      GroupPollChoice[]
+  responses    GroupPollResponse[]
+
+  @@index([group_id])
+}
+
+model GroupPollChoice {
+  id        String              @id @default(uuid())
+  poll_id   String
+  text      String
+  order     Int                 @default(0)
+  poll      GroupPoll           @relation(fields: [poll_id], references: [id], onDelete: Cascade)
+  responses GroupPollResponse[]
+
+  @@index([poll_id])
+}
+
+model GroupPollResponse {
+  id         String          @id @default(uuid())
+  poll_id    String
+  choice_id  String
+  student_id String
+  createdAt  DateTime        @default(now())
+  poll       GroupPoll       @relation(fields: [poll_id], references: [id], onDelete: Cascade)
+  choice     GroupPollChoice @relation(fields: [choice_id], references: [id], onDelete: Cascade)
+
+  @@unique([poll_id, student_id, choice_id])
+  @@index([poll_id])
+}
+
+model GroupFile {
+  id          String       @id @default(uuid())
+  group_id    String
+  uploaded_by String
+  file_name   String
+  file_url    String
+  file_size   Int?
+  file_type   String?
+  description String?
+  deleted_at  DateTime?
+  createdAt   DateTime     @default(now())
+  group       SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([group_id])
+}
+
+model GroupNotice {
+  id             String       @id @default(uuid())
+  group_id       String
+  posted_by      String
+  title          String
+  body           String
+  effective_from DateTime?
+  effective_to   DateTime?
+  is_mandatory   Boolean      @default(false)
+  deleted_at     DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  group          SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([group_id])
+}
+
+model GroupRoomBooking {
+  id               String       @id @default(uuid())
+  group_id         String
+  requested_by     String
+  room_name        String
+  booking_date     DateTime
+  from_time        String
+  to_time          String
+  purpose          String
+  expected_count   Int?
+  status           String       @default("PENDING")
+  approved_by      String?
+  approved_at      DateTime?
+  rejection_reason String?
+  createdAt        DateTime     @default(now())
+  group            SpecialGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@index([group_id])
+  @@index([status])
+  @@index([booking_date])
+}
+
+// ─── Curriculum ───────────────────────────────────────────────
+model CurriculumSubject {
+  id         String          @id @default(uuid())
+  session_id String
+  program_id String
+  branch_id  String?
+  semester   Int
+  subject_id String
+  type       String          @default("REGULAR")
+  is_core    Boolean         @default(true)
+  credits    Int?
+  order      Int             @default(0)
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  session    AcademicSession @relation(fields: [session_id], references: [id])
+  program    Program         @relation(fields: [program_id], references: [id], onDelete: Cascade)
+  subject    Subject         @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([session_id, program_id, semester, subject_id])
+  @@index([session_id])
+  @@index([program_id])
+  @@index([program_id, semester])
+}
+
+// ─── Feedback ─────────────────────────────────────────────────
 model FeedbackCategory {
   id                 String              @id @default(uuid())
   name               String
@@ -665,13 +1145,13 @@ model FeedbackForm {
   section_id          String?
   all_students        Boolean               @default(false)
   batch_year          Int?
-  course_id           String?
+  program_id          String?
   department_id       String?
   group_id            String?
   specialGroupId      String?
   feedbackFormGroupId String?
   category            FeedbackCategory      @relation(fields: [category_id], references: [id])
-  course              Course?               @relation(fields: [course_id], references: [id])
+  program             Program?              @relation(fields: [program_id], references: [id])
   department          Department?           @relation(fields: [department_id], references: [id])
   faculty             Faculty?              @relation(fields: [faculty_id], references: [id])
   feedbackFormGroup   FeedbackFormGroup?    @relation(fields: [feedbackFormGroupId], references: [id])
@@ -714,9 +1194,9 @@ model FeedbackResponse {
   submittedAt        DateTime         @default(now())
   snap_academic_year String?
   snap_batch         String?
-  snap_course_name   String?
-  snap_dept_name     String?
   snap_program_name  String?
+  snap_branch_name   String?
+  snap_dept_name     String?
   snap_section_name  String?
   snap_semester      Int?
   answers            FeedbackAnswer[]
@@ -754,30 +1234,6 @@ model Notification {
   @@index([created_at])
 }
 
-model CurriculumSubject {
-  id         String          @id @default(uuid())
-  session_id String
-  program_id String
-  course_id  String
-  semester   Int
-  subject_id String
-  type       String          @default("REGULAR")
-  is_core    Boolean         @default(true)
-  credits    Int?
-  order      Int             @default(0)
-  createdAt  DateTime        @default(now())
-  updatedAt  DateTime        @updatedAt
-  session    AcademicSession @relation(fields: [session_id], references: [id])
-  course     Course          @relation(fields: [course_id], references: [id], onDelete: Cascade)
-  program    Program         @relation(fields: [program_id], references: [id], onDelete: Cascade)
-  subject    Subject         @relation(fields: [subject_id], references: [id], onDelete: Cascade)
-
-  @@unique([session_id, course_id, semester, subject_id])
-  @@index([session_id])
-  @@index([program_id])
-  @@index([course_id, semester])
-}
-
 model AuditLog {
   id             String    @id @default(uuid())
   user_id        String?
@@ -792,9 +1248,6 @@ model AuditLog {
   changed_fields String[]
   ip             String?
   user_agent     String?
-  browser        String?
-  os             String?
-  device_type    String?
   reversible     Boolean   @default(false)
   restored_at    DateTime?
   restored_by    String?
@@ -816,4 +1269,1964 @@ enum NotificationType {
   GENERAL
   ACCOUNT_BLOCKED
   ACCOUNT_UNBLOCKED
+  LEAVE_SUBMITTED
+  LEAVE_APPROVED
+  LEAVE_REJECTED
+  GROUP_ANNOUNCEMENT
+  GROUP_TASK
+  GROUP_POLL
+  GROUP_NOTICE
+  STATUS_CHANGED
+}
+
+model OtpToken {
+  id         String   @id @default(uuid())
+  user_id    String
+  purpose    String
+  otp_hash   String
+  attempts   Int      @default(0)
+  used       Boolean  @default(false)
+  expires_at DateTime
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, purpose])
+  @@index([expires_at])
+}
+
+model ErpSetting {
+  id          String   @id @default(uuid())
+  key         String   @unique
+  value       String
+  label       String
+  description String?
+  category    String
+  data_type   String   @default("string")
+  is_system   Boolean  @default(false)
+  updated_by  String?
+  updatedAt   DateTime @updatedAt
+  createdAt   DateTime @default(now())
+
+  @@index([category])
+}
+
+model UserTotp {
+  id         String   @id @default(uuid())
+  user_id    String   @unique
+  secret     String
+  is_enabled Boolean  @default(false)
+  verified   Boolean  @default(false)
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+  user       User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+// ─── Academic Calendar Periods ────────────────────────────────
+model AcademicPeriod {
+  id         String          @id @default(uuid())
+  session_id String
+  type       String          @default("ACADEMIC")
+  label      String
+  start_date DateTime
+  end_date   DateTime
+  order      Int             @default(0)
+  notes      String?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+  session    AcademicSession @relation(fields: [session_id], references: [id], onDelete: Cascade)
+
+  @@index([session_id])
+  @@index([type])
+}
+
+// ─── History Models ───────────────────────────────────────────
+model DepartmentHistory {
+  id              String   @id @default(uuid())
+  dept_id         String
+  action          String
+  changed_fields  String[] @default([])
+  prev_data       Json?
+  new_data        Json?
+  reason          String?
+  changed_by      String?
+  changed_by_name String?
+  changed_by_role String?
+  is_rollback     Boolean  @default(false)
+  rolled_back_to  String?
+  createdAt       DateTime @default(now())
+
+  @@index([dept_id])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model ProgramHistory {
+  id              String   @id @default(uuid())
+  program_id      String
+  action          String
+  changed_fields  String[] @default([])
+  prev_data       Json?
+  new_data        Json?
+  reason          String?
+  changed_by      String?
+  changed_by_name String?
+  changed_by_role String?
+  is_rollback     Boolean  @default(false)
+  rolled_back_to  String?
+  createdAt       DateTime @default(now())
+
+  @@index([program_id])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model BranchHistory {
+  id              String   @id @default(uuid())
+  branch_id       String
+  action          String
+  changed_fields  String[] @default([])
+  prev_data       Json?
+  new_data        Json?
+  reason          String?
+  changed_by      String?
+  changed_by_name String?
+  changed_by_role String?
+  is_rollback     Boolean  @default(false)
+  rolled_back_to  String?
+  createdAt       DateTime @default(now())
+
+  @@index([branch_id])
+  @@index([action])
+  @@index([createdAt])
+}
+
+model SectionSnapshot {
+  id                String    @id @default(uuid())
+  section_id        String
+  section_code      String
+  trigger           String
+  triggered_by      String?
+  triggered_by_name String?
+  section_data      Json
+  students_data     Json
+  enrollments_data  Json
+  subjects_data     Json
+  from_semester     Int?
+  to_semester       Int?
+  from_session      String?
+  to_session        String?
+  reason            String?
+  notes             String?
+  rolled_back_at    DateTime?
+  rolled_back_by    String?
+  createdAt         DateTime  @default(now())
+
+  @@index([section_id])
+  @@index([trigger])
+  @@index([createdAt])
+}
+
+model EnrollmentHistory {
+  id                String   @id @default(uuid())
+  enrollment_id     String?
+  student_id        String
+  section_id        String?
+  session_id        String?
+  action            String
+  from_semester     Int?
+  to_semester       Int?
+  from_status       String?
+  to_status         String?
+  from_section_id   String?
+  to_section_id     String?
+  from_section_code String?
+  to_section_code   String?
+  from_session      String?
+  to_session        String?
+  prev_data         Json?
+  new_data          Json?
+  reason            String?
+  changed_by        String?
+  changed_by_name   String?
+  changed_by_role   String?
+  is_rollback       Boolean  @default(false)
+  rolled_back_to    String?
+  snapshot_id       String?
+  createdAt         DateTime @default(now())
+
+  @@index([student_id])
+  @@index([section_id])
+  @@index([action])
+  @@index([createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// V3 — ROOMS, TIMETABLE, WORKLOAD
+// ═══════════════════════════════════════════════════════════════
+
+enum RoomType {
+  CLASSROOM
+  LAB
+  SEMINAR_HALL
+  AUDITORIUM
+  TRAINING_ROOM
+  CONFERENCE_ROOM
+  LIBRARY
+  OTHER
+}
+
+enum PeriodType {
+  LECTURE
+  LAB
+  LUNCH
+  BREAK
+  ASSEMBLY
+  OTHER
+}
+
+enum TimetableStatus {
+  DRAFT
+  PUBLISHED
+  LOCKED
+  ARCHIVED
+}
+
+enum EntryType {
+  LECTURE
+  LAB
+  TUTORIAL
+  FREE
+  LUNCH
+  BREAK
+}
+
+enum SubstStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+// ─── Room / Lab Master ────────────────────────────────────────
+model Room {
+  id               String            @id @default(uuid())
+  name             String
+  code             String            @unique
+  type             RoomType          @default(CLASSROOM)
+  capacity         Int               @default(60)
+  floor            String?
+  block            String?
+  description      String?
+  is_active        Boolean           @default(true)
+  dept_id          String?
+  department       Department?       @relation(fields: [dept_id], references: [id])
+  subjects         RoomSubject[]
+  staff            RoomStaff[]
+  timetableEntries TimetableEntry[]
+  workloads        FacultyWorkload[]
+  examRooms        ExamRoom[]
+  deleted_at       DateTime?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+}
+
+model RoomSubject {
+  id         String  @id @default(uuid())
+  room_id    String
+  subject_id String
+  room       Room    @relation(fields: [room_id], references: [id], onDelete: Cascade)
+  subject    Subject @relation(fields: [subject_id], references: [id], onDelete: Cascade)
+
+  @@unique([room_id, subject_id])
+}
+
+model RoomStaff {
+  id        String   @id @default(uuid())
+  room_id   String
+  user_id   String
+  role      String   @default("LAB_STAFF")
+  room      Room     @relation(fields: [room_id], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  faculty   Faculty? @relation(fields: [facultyId], references: [id])
+  facultyId String?
+
+  @@unique([room_id, user_id])
+}
+
+// ─── Period Config ────────────────────────────────────────────
+model PeriodConfig {
+  id         String           @id @default(uuid())
+  session_id String
+  name       String
+  type       PeriodType       @default(LECTURE)
+  start_time String
+  end_time   String
+  order      Int              @default(0)
+  days       String[]
+  is_active  Boolean          @default(true)
+  session    AcademicSession  @relation(fields: [session_id], references: [id], onDelete: Cascade)
+  entries    TimetableEntry[]
+  createdAt  DateTime         @default(now())
+
+  @@unique([session_id, order])
+}
+
+// ─── Timetable ────────────────────────────────────────────────
+model Timetable {
+  id           String              @id @default(uuid())
+  session_id   String
+  section_id   String              @unique
+  dept_id      String?
+  status       TimetableStatus     @default(DRAFT)
+  locked       Boolean             @default(false)
+  locked_by    String?
+  locked_at    DateTime?
+  generated_at DateTime?
+  session      AcademicSession     @relation(fields: [session_id], references: [id])
+  section      Section             @relation(fields: [section_id], references: [id])
+  department   Department?         @relation(fields: [dept_id], references: [id])
+  entries      TimetableEntry[]
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  entryLogs    TimetableEntryLog[]
+  snapshots    TimetableSnapshot[]
+}
+
+model TimetableEntry {
+  id                  String         @id @default(uuid())
+  timetable_id        String
+  period_config_id    String
+  day                 String
+  subject_id          String?
+  faculty_id          String?
+  room_id             String?
+  entry_type          EntryType      @default(LECTURE)
+  notes               String?
+  is_combined         Boolean        @default(false)
+  combined_section_id String?
+  combined_label      String? // custom label for combined slot
+  span_periods        Int            @default(1) // 1=normal, 2=double period
+  timetable           Timetable      @relation(fields: [timetable_id], references: [id], onDelete: Cascade)
+  period_config       PeriodConfig   @relation(fields: [period_config_id], references: [id])
+  subject             Subject?       @relation(fields: [subject_id], references: [id])
+  faculty             Faculty?       @relation(fields: [faculty_id], references: [id])
+  room                Room?          @relation(fields: [room_id], references: [id])
+  substitutions       Substitution[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  @@unique([timetable_id, day, period_config_id])
+}
+
+// ─── Substitution ─────────────────────────────────────────────
+model Substitution {
+  id                    String         @id @default(uuid())
+  entry_id              String
+  date                  DateTime
+  original_faculty_id   String
+  substitute_faculty_id String
+  status                SubstStatus    @default(PENDING)
+  reason                String?
+  leave_id              String?
+  requested_at          DateTime       @default(now())
+  responded_at          DateTime?
+  response_note         String?
+  entry                 TimetableEntry @relation(fields: [entry_id], references: [id])
+  original_faculty      Faculty        @relation("OriginalFaculty", fields: [original_faculty_id], references: [id])
+  substitute            Faculty        @relation("SubstituteFaculty", fields: [substitute_faculty_id], references: [id])
+  createdAt             DateTime       @default(now())
+}
+
+// ─── Faculty Workload ─────────────────────────────────────────
+model FacultyWorkload {
+  id                String          @id @default(uuid())
+  session_id        String
+  faculty_id        String
+  subject_id        String
+  section_id        String
+  weekly_hours      Int             @default(4)
+  preferred_days    String[]
+  preferred_periods Int[]
+  room_id           String?
+  entry_type        EntryType       @default(LECTURE)
+  session           AcademicSession @relation(fields: [session_id], references: [id])
+  faculty           Faculty         @relation(fields: [faculty_id], references: [id])
+  subject           Subject         @relation(fields: [subject_id], references: [id])
+  section           Section         @relation(fields: [section_id], references: [id])
+  room              Room?           @relation(fields: [room_id], references: [id])
+  createdAt         DateTime        @default(now())
+
+  @@unique([session_id, faculty_id, subject_id, section_id])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// V3 — LEAVE & ATTENDANCE
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Leave Types (created by HR) ─────────────────────────────
+model LeaveType {
+  id                String             @id @default(uuid())
+  code              String             @unique // CL, EL, ML, PL
+  name              String // Casual Leave
+  applicable_to     String[]           @default([]) // ["TEACHING","NON_TEACHING","ALL"]
+  max_days_per_year Int                @default(0)
+  carry_forward     Boolean            @default(false)
+  carry_forward_max Int? // max days to carry
+  is_paid           Boolean            @default(true)
+  requires_document Boolean            @default(false)
+  min_days          Float              @default(0.5)
+  max_consecutive   Int?
+  notice_days       Int                @default(0) // advance notice required
+  is_active         Boolean            @default(true)
+  description       String?
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+  policyRules       LeavePolicyRule[]
+  balances          LeaveBalance[]
+  applications      LeaveApplication[]
+}
+
+// ─── Leave Policy (contract type → leave entitlements) ───────
+model LeavePolicy {
+  id              String               @id @default(uuid())
+  name            String               @unique // "Permanent Teaching Staff Policy"
+  contract_types  String[] // ["PERMANENT","CONTRACT"]
+  employee_types  String[] // ["TEACHING","NON_TEACHING"]
+  sat_off_rule    String               @default("NONE") // ALL / FIRST_THIRD / SECOND_FOURTH / NONE
+  is_active       Boolean              @default(true)
+  accepted_by     String[]             @default([]) // user_ids who accepted T&C
+  terms_text      String? // T&C content
+  version         Int                  @default(1)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  rules           LeavePolicyRule[]
+  facultyPolicies FacultyLeavePolicy[]
+}
+
+model LeavePolicyRule {
+  id                String      @id @default(uuid())
+  policy_id         String
+  leave_type_id     String
+  days_per_year     Int
+  carry_forward     Boolean     @default(false)
+  carry_forward_max Int?
+  policy            LeavePolicy @relation(fields: [policy_id], references: [id], onDelete: Cascade)
+  leave_type        LeaveType   @relation(fields: [leave_type_id], references: [id], onDelete: Cascade)
+
+  @@unique([policy_id, leave_type_id])
+}
+
+// Faculty → Policy assignment
+model FacultyLeavePolicy {
+  id          String      @id @default(uuid())
+  faculty_id  String      @unique
+  policy_id   String
+  accepted    Boolean     @default(false)
+  accepted_at DateTime?
+  assigned_by String?
+  createdAt   DateTime    @default(now())
+  faculty     Faculty     @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  policy      LeavePolicy @relation(fields: [policy_id], references: [id])
+}
+
+// ─── Leave Balance ────────────────────────────────────────────
+model LeaveBalance {
+  id              String    @id @default(uuid())
+  faculty_id      String
+  leave_type_id   String
+  academic_year   String // "2024-25"
+  total_days      Float     @default(0)
+  used_days       Float     @default(0)
+  pending_days    Float     @default(0) // in pending applications
+  carried_forward Float     @default(0)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  faculty         Faculty   @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  leave_type      LeaveType @relation(fields: [leave_type_id], references: [id])
+
+  @@unique([faculty_id, leave_type_id, academic_year])
+}
+
+// ─── Leave Approval Workflow ──────────────────────────────────
+model LeaveApprovalWorkflow {
+  id         String   @id @default(uuid())
+  faculty_id String   @unique
+  steps      Json     @default("[]") // [{level:1, approver_id:"...", role:"HOD"}]
+  created_by String?
+  updatedAt  DateTime @updatedAt
+  faculty    Faculty  @relation("FacultyApprovalWorkflow", fields: [faculty_id], references: [id], onDelete: Cascade)
+}
+
+// ─── Leave Application ────────────────────────────────────────
+model LeaveApplication {
+  id               String              @id @default(uuid())
+  faculty_id       String
+  leave_type_id    String
+  from_date        DateTime
+  to_date          DateTime
+  total_days       Float
+  half_day         Boolean             @default(false)
+  half_day_period  String? // MORNING / AFTERNOON
+  reason           String
+  documents        String[]            @default([])
+  status           String              @default("PENDING") // PENDING/APPROVED/REJECTED/CANCELLED/WITHDRAWN
+  current_level    Int                 @default(1)
+  policy_accepted  Boolean             @default(false)
+  policy_version   Int?
+  remarks          String?
+  rejection_reason String?
+  cancelled_by     String?
+  cancelled_at     DateTime?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  faculty          Faculty             @relation("FacultyLeaveApps", fields: [faculty_id], references: [id], onDelete: Cascade)
+  leave_type       LeaveType           @relation(fields: [leave_type_id], references: [id])
+  approvalSteps    LeaveApprovalStep[]
+  substitutions    LeaveSubstitution[]
+
+  @@index([faculty_id, status])
+  @@index([from_date, to_date])
+}
+
+model LeaveApprovalStep {
+  id             String           @id @default(uuid())
+  application_id String
+  approver_id    String
+  approver_role  String?
+  level          Int
+  status         String           @default("PENDING")
+  remarks        String?
+  actioned_at    DateTime?
+  notified_at    DateTime?
+  createdAt      DateTime         @default(now())
+  application    LeaveApplication @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  approver       Faculty          @relation("LeaveStepApprover", fields: [approver_id], references: [id])
+  leaveRequest   LeaveRequest?    @relation(fields: [leaveRequestId], references: [id])
+  leaveRequestId String?
+
+  @@index([application_id])
+  @@index([approver_id, status])
+}
+
+// Substitute assignment per lecture during leave
+model LeaveSubstitution {
+  id             String           @id @default(uuid())
+  application_id String
+  entry_id       String? // TimetableEntry id
+  date           DateTime
+  period_name    String
+  subject_name   String?
+  original_id    String
+  substitute_id  String
+  status         String           @default("PENDING") // PENDING/ACCEPTED/REJECTED
+  responded_at   DateTime?
+  response_note  String?
+  createdAt      DateTime         @default(now())
+  application    LeaveApplication @relation(fields: [application_id], references: [id], onDelete: Cascade)
+  original       Faculty          @relation("SubstOriginal", fields: [original_id], references: [id])
+  substitute     Faculty          @relation("SubstFaculty", fields: [substitute_id], references: [id])
+
+  @@index([application_id])
+  @@index([substitute_id, status])
+}
+
+// Student leave
+model StudentLeave {
+  id          String    @id @default(uuid())
+  student_id  String
+  from_date   DateTime
+  to_date     DateTime
+  total_days  Int
+  reason      String
+  documents   String[]  @default([])
+  status      String    @default("PENDING")
+  approved_by String?
+  approved_at DateTime?
+  remarks     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  student     Student   @relation("StudentLeaves", fields: [student_id], references: [id], onDelete: Cascade)
+
+  approvals StudentLeaveApproval[]
+
+  @@index([student_id, status])
+}
+
+// ─── Attendance ───────────────────────────────────────────────
+// Session-level freeze control
+model AttendanceFreezeRule {
+  id            String          @id @default(uuid())
+  session_id    String
+  scope         String          @default("INSTITUTE") // INSTITUTE/DEPT/SECTION
+  scope_id      String? // dept_id or section_id
+  is_frozen     Boolean         @default(false)
+  frozen_by     String?
+  frozen_at     DateTime?
+  freeze_reason String?
+  unfrozen_by   String?
+  unfrozen_at   DateTime?
+  createdAt     DateTime        @default(now())
+  session       AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@unique([session_id, scope, scope_id])
+}
+
+// Student attendance per lecture
+model StudentAttendance {
+  id                String          @id @default(uuid())
+  session_id        String
+  section_id        String
+  subject_id        String
+  student_id        String
+  faculty_id        String?
+  date              DateTime        @db.Date
+  period_name       String // P1, P2, Lab1...
+  period_config_id  String?
+  status            String          @default("PRESENT") // PRESENT/ABSENT/LATE/EXCUSED/ON_LEAVE
+  is_late           Boolean         @default(false)
+  late_reason       String?
+  late_approved_by  String?
+  late_approved_at  DateTime?
+  marked_by         String?
+  marked_at         DateTime        @default(now())
+  is_frozen         Boolean         @default(false)
+  back_entry        Boolean         @default(false)
+  back_entry_reason String?
+  back_entry_by     String?
+  updatedAt         DateTime        @updatedAt
+  session           AcademicSession @relation(fields: [session_id], references: [id])
+  section           Section         @relation(fields: [section_id], references: [id])
+  subject           Subject         @relation(fields: [subject_id], references: [id])
+  student           Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  faculty           Faculty?        @relation(fields: [facultyId], references: [id])
+  facultyId         String?
+
+  @@unique([session_id, section_id, subject_id, student_id, date, period_name])
+  @@index([student_id, session_id])
+  @@index([section_id, date])
+  @@index([subject_id, session_id])
+  @@index([date])
+}
+
+// Faculty biometric attendance
+model FacultyAttendance {
+  id         String    @id @default(uuid())
+  faculty_id String
+  date       DateTime  @db.Date
+  in_time    DateTime?
+  out_time   DateTime?
+  status     String    @default("PRESENT") // PRESENT/ABSENT/HALF_DAY/ON_LEAVE/HOLIDAY
+  source     String    @default("BIOMETRIC") // BIOMETRIC/MANUAL
+  device_id  String?
+  raw_logs   Json? // store all punch events
+  remarks    String?
+  marked_by  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  faculty    Faculty   @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+
+  @@unique([faculty_id, date])
+  @@index([faculty_id, date])
+  @@index([date])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// V3 — TIMETABLE EXTENSIONS
+// ═══════════════════════════════════════════════════════════════
+
+// ─── Timetable Generation Config (admin sets before generate) ─
+model TimetableGenConfig {
+  id                      String    @id @default(uuid())
+  session_id              String
+  dept_id                 String?
+  theory_periods_per_week Int       @default(1) // per subject per week
+  lab_periods_per_week    Int       @default(2) // labs run 2 consecutive slots
+  lab_consecutive         Boolean   @default(true)
+  allow_combined_sections Boolean   @default(false)
+  combined_rules          Json? // [{subject_id, section_ids, max_students}]
+  working_days            String[]  @default(["MON", "TUE", "WED", "THU", "FRI", "SAT"])
+  max_periods_per_day     Int       @default(8)
+  generated_at            DateTime?
+  generated_by            String?
+  notes                   String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+}
+
+// ─── Course Structure (faculty uploads syllabus/topic list) ───
+model CourseStructure {
+  id            String          @id @default(uuid())
+  faculty_id    String
+  subject_id    String
+  section_id    String
+  session_id    String
+  unit_no       Int
+  unit_title    String
+  topic         String
+  sub_topic     String?
+  planned_hours Float           @default(1)
+  order         Int             @default(0)
+  is_covered    Boolean         @default(false)
+  covered_on    DateTime?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  faculty       Faculty         @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  subject       Subject         @relation(fields: [subject_id], references: [id])
+  section       Section         @relation(fields: [section_id], references: [id])
+  session       AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@index([faculty_id, subject_id, section_id])
+}
+
+// ─── Topic Taught (faculty marks per lecture) ─────────────────
+model TopicTaught {
+  id              String          @id @default(uuid())
+  attendance_date DateTime        @db.Date
+  period_name     String
+  faculty_id      String
+  subject_id      String
+  section_id      String
+  session_id      String
+  course_topic_id String? // FK to CourseStructure (optional)
+  topic_text      String // free text — faculty types or selects
+  sub_topic       String?
+  teaching_method String? // LECTURE | DEMO | PRACTICAL | DISCUSSION | SEMINAR
+  remarks         String?
+  createdAt       DateTime        @default(now())
+  faculty         Faculty         @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  subject         Subject         @relation(fields: [subject_id], references: [id])
+  section         Section         @relation(fields: [section_id], references: [id])
+  session         AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@unique([attendance_date, period_name, faculty_id, subject_id, section_id])
+  @@index([faculty_id, attendance_date])
+  @@index([section_id, attendance_date])
+}
+
+// ─── Seminar / Workshop / Training Session ────────────────────
+model SpecialSession {
+  id                   String                     @id @default(uuid())
+  session_id           String
+  title                String
+  type                 String                     @default("SEMINAR") // SEMINAR | WORKSHOP | TRAINING | GUEST_LECTURE
+  organizer            String?
+  venue                String?
+  from_date            DateTime
+  to_date              DateTime
+  from_time            String?
+  to_time              String?
+  attendance_counts_as String                     @default("PRESENT") // PRESENT | EXCUSED | SPECIAL
+  section_ids          String[] // which sections attend
+  faculty_ids          String[] // which faculty attend
+  created_by           String?
+  description          String?
+  createdAt            DateTime                   @default(now())
+  updatedAt            DateTime                   @updatedAt
+  session              AcademicSession            @relation(fields: [session_id], references: [id])
+  attendances          SpecialSessionAttendance[]
+}
+
+model SpecialSessionAttendance {
+  id                 String         @id @default(uuid())
+  special_session_id String
+  student_id         String?
+  faculty_id         String?
+  status             String         @default("PRESENT")
+  marked_by          String?
+  createdAt          DateTime       @default(now())
+  special_session    SpecialSession @relation(fields: [special_session_id], references: [id], onDelete: Cascade)
+
+  @@unique([special_session_id, student_id])
+  @@unique([special_session_id, faculty_id])
+}
+
+// ─── Daily Reports ────────────────────────────────────────────
+model DailyReport {
+  id           String   @id @default(uuid())
+  report_date  DateTime @db.Date
+  report_type  String // FACULTY | STUDENT | SECTION | DEPT | BRANCH | PROGRAM | SESSION
+  // Scope fields — one will be set depending on type
+  faculty_id   String?
+  student_id   String?
+  section_id   String?
+  dept_id      String?
+  branch_id    String?
+  program_id   String?
+  session_id   String?
+  // Report data (snapshot)
+  data         Json
+  generated_at DateTime @default(now())
+  generated_by String? // "CRON" | user_id
+
+  @@unique([report_date, report_type, faculty_id])
+  @@unique([report_date, report_type, student_id])
+  @@unique([report_date, report_type, section_id])
+  @@unique([report_date, report_type, dept_id])
+  @@index([report_date])
+  @@index([report_type, report_date])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// V3 — TIMETABLE HISTORY
+// ═══════════════════════════════════════════════════════════════
+
+// Per-entry change log (every slot change)
+model TimetableEntryLog {
+  id                 String          @id @default(uuid())
+  timetable_id       String
+  section_id         String
+  session_id         String
+  day                String
+  period_config_id   String
+  action             String // ASSIGN | CLEAR | SWAP | DRAG | PUBLISH | AUTO_GENERATE
+  prev_subject_id    String?
+  prev_faculty_id    String?
+  prev_room_id       String?
+  prev_entry_type    String?
+  new_subject_id     String?
+  new_faculty_id     String?
+  new_room_id        String?
+  new_entry_type     String?
+  // For swap/drag across sections
+  swap_with_entry_id String?
+  swap_section_id    String?
+  changed_by         String? // user_id
+  changed_by_name    String?
+  changed_by_role    String?
+  notes              String?
+  createdAt          DateTime        @default(now())
+  // Relations for display
+  timetable          Timetable       @relation(fields: [timetable_id], references: [id], onDelete: Cascade)
+  section            Section         @relation("EntryLogSection", fields: [section_id], references: [id])
+  session            AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@index([timetable_id])
+  @@index([section_id])
+  @@index([changed_by])
+  @@index([createdAt])
+}
+
+// Full timetable snapshot (created on publish/lock or manual save)
+model TimetableSnapshot {
+  id                String          @id @default(uuid())
+  timetable_id      String
+  section_id        String
+  session_id        String
+  version           Int             @default(1)
+  label             String? // "Week 1 Final", "After Mid-sem", etc.
+  is_active         Boolean         @default(false) // only one ACTIVE per timetable
+  snapshot_data     Json // full entries array — hardcoded, never deleted
+  published_by      String?
+  published_by_name String?
+  reason            String?
+  createdAt         DateTime        @default(now())
+  // NO updatedAt — snapshots are immutable
+  timetable         Timetable       @relation(fields: [timetable_id], references: [id], onDelete: Cascade)
+  section           Section         @relation("SnapshotSection", fields: [section_id], references: [id])
+  session           AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@index([timetable_id, is_active])
+  @@index([section_id])
+}
+
+// ─── Faculty Subject Preference Requests ─────────────────────
+model FacultySubjectRequest {
+  id           String          @id @default(uuid())
+  faculty_id   String
+  subject_id   String
+  session_id   String
+  preference   Int             @default(1) // 1 or 2
+  status       String          @default("PENDING") // PENDING|APPROVED|REJECTED
+  requested_at DateTime        @default(now())
+  reviewed_by  String?
+  reviewed_at  DateTime?
+  review_note  String?
+  faculty      Faculty         @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  subject      Subject         @relation(fields: [subject_id], references: [id])
+  session      AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@unique([faculty_id, subject_id, session_id])
+  @@index([faculty_id, status])
+  @@index([session_id, status])
+}
+
+// Add back-relation to Subject and AcademicSession
+
+// ═══════════════════════════════════════════════════════════════
+// PHASE 1 SCHEMA ADDITIONS — EIT ERP V3
+// Add these models to existing schema.prisma
+// ═══════════════════════════════════════════════════════════════
+
+// ─────────────────────────────────────────────────────────────
+// NEW ENUMS
+// ─────────────────────────────────────────────────────────────
+
+enum LeaveApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  FORWARDED
+  CANCELLED
+}
+
+enum ExamType {
+  CLASS_TEST
+  SESSIONAL_1
+  SESSIONAL_2
+  MID_TERM
+  PRE_UNIVERSITY
+  UNIVERSITY_THEORY
+  UNIVERSITY_PRACTICAL
+  INTERNAL_PRACTICAL
+}
+
+enum ExamStatus {
+  DRAFT
+  SCHEDULED
+  ONGOING
+  COMPLETED
+  CANCELLED
+  POSTPONED
+}
+
+enum FeeStatus {
+  PENDING
+  PAID
+  PARTIAL
+  WAIVED
+  SCHOLARSHIP
+  OVERDUE
+  REFUNDED
+  NOT_APPLICABLE
+}
+
+enum SubmissionStatus {
+  DRAFT
+  SUBMITTED
+  LATE
+  GRADED
+  RETURNED
+  PLAGIARISM_FLAGGED
+  PENDING
+  FLAGGED
+  RESUBMIT
+}
+
+enum SalaryStatus {
+  DRAFT
+  GENERATED
+  APPROVED
+  PAID
+  REJECTED
+  CANCELLED
+}
+
+enum CalendarEventType {
+  COMMENCEMENT_OF_CLASSES
+  HOLIDAY
+  OFF_SATURDAY
+  ANNUAL_FEST
+  PTM
+  SESSIONAL_TEST
+  SESSIONAL_MARKS_DISPLAY
+  ATTENDANCE_ELIGIBILITY
+  PRE_UNIVERSITY_EXAM
+  LAST_TEACHING_DAY
+  UNIVERSITY_PRACTICAL
+  UNIVERSITY_THEORY_EXAM
+  CLASS_TEST
+  INTERNAL_PRACTICAL
+  WORKING_SATURDAY
+  SPECIAL_EVENT
+  HACKATHON
+  CULTURAL_EVENT
+  SPORTS_EVENT
+  EXAM
+  EVENT
+  FESTIVAL
+  SPORTS
+  CULTURAL
+  ACADEMIC
+  LEAVE
+  OTHER
+}
+
+// ─────────────────────────────────────────────────────────────
+// ACADEMIC CALENDAR
+// ─────────────────────────────────────────────────────────────
+
+model AcademicCalendarEvent {
+  id                 String            @id @default(uuid())
+  session_id         String
+  title              String
+  event_type         CalendarEventType
+  start_date         DateTime          @db.Date
+  end_date           DateTime          @db.Date
+  week_no            Int?
+  is_holiday         Boolean           @default(false)
+  is_working         Boolean           @default(true)
+  affects_attendance Boolean           @default(true)
+  color              String? // hex color for UI
+  description        String?
+  dept_ids           String[]          @default([]) // [] = all depts
+  created_by         String?
+  deleted_at         DateTime?
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
+
+  session AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@index([session_id, start_date])
+  @@index([event_type])
+  @@index([is_holiday])
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXTRA ATTENDANCE
+// ─────────────────────────────────────────────────────────────
+
+model ExtraAttendance {
+  id             String   @id @default(uuid())
+  student_id     String
+  section_id     String?
+  subject_id     String?
+  session_id     String
+  units          Int // number of extra classes
+  reason         String
+  type           String   @default("EXTRA") // EXTRA | MEDICAL | EVENT
+  granted_by     String
+  granted_at     DateTime @default(now())
+  effective_date DateTime @db.Date
+  approved       Boolean  @default(true)
+  remarks        String?
+
+  student Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  session AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@index([student_id])
+  @@index([session_id])
+  @@index([section_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// STUDENT LEAVE — ENHANCED (approval workflow)
+// ─────────────────────────────────────────────────────────────
+
+model StudentLeaveApproval {
+  id          String              @id @default(uuid())
+  leave_id    String
+  step        Int // 1=CC, 2=HOD, 3=Director
+  role        String // CLASS_COORDINATOR | HOD | DIRECTOR
+  approver_id String? // faculty/admin user id
+  status      LeaveApprovalStatus @default(PENDING)
+  remarks     String?
+  acted_at    DateTime?
+  createdAt   DateTime            @default(now())
+
+  leave StudentLeave @relation(fields: [leave_id], references: [id], onDelete: Cascade)
+
+  @@index([leave_id])
+  @@index([approver_id, status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// ASSIGNMENT MODULE
+// ─────────────────────────────────────────────────────────────
+
+model Assignment {
+  id                   String    @id @default(uuid())
+  title                String
+  description          String?
+  instructions         String?
+  subject_id           String
+  faculty_id           String
+  session_id           String
+  // Sections this assignment is for
+  section_ids          String[]  @default([])
+  // Marks
+  total_marks          Float     @default(10)
+  passing_marks        Float     @default(4)
+  // Deadline
+  deadline             DateTime
+  allow_late           Boolean   @default(true)
+  late_penalty_pct     Float     @default(5) // % per day
+  max_late_days        Int       @default(3)
+  // Submission type
+  allow_file           Boolean   @default(true)
+  allow_text           Boolean   @default(true)
+  max_file_size_mb     Int       @default(20)
+  allowed_formats      String[]  @default(["pdf", "doc", "docx", "zip"])
+  // Plagiarism
+  plagiarism_check     Boolean   @default(false)
+  plagiarism_threshold Float     @default(30) // % threshold to flag
+  // Status
+  status               String    @default("DRAFT") // DRAFT|PUBLISHED|CLOSED|GRADED
+  published_at         DateTime?
+  closed_at            DateTime?
+  // CO-PO mapping
+  co_mapping           String[]  @default([])
+  po_mapping           String[]  @default([])
+  // Meta
+  created_by           String?
+  deleted_at           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  subject     Subject                @relation(fields: [subject_id], references: [id])
+  faculty     Faculty                @relation(fields: [faculty_id], references: [id])
+  session     AcademicSession        @relation(fields: [session_id], references: [id])
+  submissions AssignmentSubmission[]
+  grades      AssignmentGrade[]
+
+  @@index([faculty_id])
+  @@index([subject_id])
+  @@index([session_id])
+  @@index([status])
+  @@index([deadline])
+}
+
+model AssignmentSubmission {
+  id              String           @id @default(uuid())
+  assignment_id   String
+  student_id      String
+  status          SubmissionStatus @default(DRAFT)
+  // Content
+  text_content    String?
+  file_urls       String[]         @default([])
+  file_names      String[]         @default([])
+  // Timing
+  submitted_at    DateTime?
+  is_late         Boolean          @default(false)
+  late_days       Int              @default(0)
+  // Plagiarism
+  similarity_pct  Float?
+  plagiarism_flag Boolean          @default(false)
+  checked_at      DateTime?
+  // Grading
+  obtained_marks  Float?
+  penalty_marks   Float            @default(0)
+  final_marks     Float?
+  graded_at       DateTime?
+  graded_by       String?
+  grade_remarks   String?
+  justify_reason  String? // if giving full marks despite penalty
+  // Meta
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  assignment Assignment       @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  student    Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  grade      AssignmentGrade?
+
+  @@unique([assignment_id, student_id])
+  @@index([assignment_id])
+  @@index([student_id])
+  @@index([status])
+}
+
+model AssignmentGrade {
+  id            String   @id @default(uuid())
+  assignment_id String
+  submission_id String   @unique
+  student_id    String
+  marks         Float
+  letter_grade  String?
+  remarks       String?
+  graded_by     String
+  graded_at     DateTime @default(now())
+
+  assignment Assignment           @relation(fields: [assignment_id], references: [id], onDelete: Cascade)
+  submission AssignmentSubmission @relation(fields: [submission_id], references: [id], onDelete: Cascade)
+  student    Student              @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([assignment_id])
+  @@index([student_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// EXAM MODULE
+// ─────────────────────────────────────────────────────────────
+
+model Exam {
+  id                  String     @id @default(uuid())
+  session_id          String
+  title               String
+  code                String?
+  exam_type           ExamType
+  status              ExamStatus @default(DRAFT)
+  dept_ids            String[]   @default([]) // [] = all
+  // Schedule
+  start_date          DateTime   @db.Date
+  end_date            DateTime   @db.Date
+  // Settings
+  seating_auto        Boolean    @default(true)
+  hall_ticket_enabled Boolean    @default(true)
+  result_published    Boolean    @default(false)
+  result_published_at DateTime?
+  // Instructions
+  instructions        String?
+  // Meta
+  created_by          String?
+  cancelled_by        String?
+  cancelled_at        DateTime?
+  cancel_reason       String?
+  deleted_at          DateTime?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  session        AcademicSession @relation(fields: [session_id], references: [id])
+  schedule       ExamSchedule[]
+  rooms          ExamRoom[]
+  seatings       ExamSeating[]
+  hallTickets    HallTicket[]
+  questionPapers QuestionPaper[]
+  marks          ExamMark[]
+
+  @@index([session_id, exam_type])
+  @@index([status])
+  @@index([start_date])
+}
+
+model ExamSchedule {
+  id            String   @id @default(uuid())
+  exam_id       String
+  subject_id    String
+  branch_ids    String[] @default([])
+  section_ids   String[] @default([])
+  exam_date     DateTime @db.Date
+  start_time    String // "10:00"
+  end_time      String // "13:00"
+  duration_mins Int      @default(180)
+  max_marks     Float    @default(100)
+  passing_marks Float    @default(40)
+  // CO-PO
+  co_mapping    String[] @default([])
+  is_practical  Boolean  @default(false)
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  exam    Exam    @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id])
+
+  @@index([exam_id])
+  @@index([subject_id])
+  @@index([exam_date])
+}
+
+model ExamRoom {
+  id              String   @id @default(uuid())
+  exam_id         String
+  exam_date       DateTime @db.Date
+  room_id         String
+  capacity        Int
+  invigilator_ids String[] @default([])
+  notes           String?
+
+  exam     Exam          @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  room     Room          @relation(fields: [room_id], references: [id])
+  seatings ExamSeating[]
+
+  @@index([exam_id, exam_date])
+}
+
+model ExamSeating {
+  id           String   @id @default(uuid())
+  exam_id      String
+  exam_room_id String
+  student_id   String
+  roll_no      String?
+  seat_no      String
+  exam_date    DateTime @db.Date
+  subject_id   String?
+  row_no       Int?
+  col_no       Int?
+  is_manual    Boolean  @default(false) // admin override
+  createdAt    DateTime @default(now())
+
+  exam      Exam     @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  exam_room ExamRoom @relation(fields: [exam_room_id], references: [id], onDelete: Cascade)
+  student   Student  @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([exam_id, student_id, exam_date])
+  @@unique([exam_room_id, seat_no, exam_date])
+  @@index([exam_id])
+  @@index([student_id])
+}
+
+model HallTicket {
+  id                 String    @id @default(uuid())
+  exam_id            String
+  student_id         String
+  ticket_no          String    @unique
+  generated_at       DateTime  @default(now())
+  generated_by       String?
+  is_valid           Boolean   @default(true)
+  invalidated_reason String?
+  downloaded_at      DateTime?
+  pdf_url            String?
+
+  exam    Exam    @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@unique([exam_id, student_id])
+  @@index([exam_id])
+  @@index([student_id])
+}
+
+model QuestionPaper {
+  id           String    @id @default(uuid())
+  exam_id      String
+  subject_id   String
+  faculty_id   String
+  title        String
+  // Content
+  file_url     String?
+  text_content String?
+  format_type  String    @default("STANDARD") // STANDARD|CUSTOM
+  // CO-PO mapping
+  co_mapping   Json?
+  po_mapping   Json?
+  // Status
+  status       String    @default("DRAFT") // DRAFT|SUBMITTED|APPROVED|PUBLISHED
+  submitted_at DateTime?
+  approved_by  String?
+  approved_at  DateTime?
+  // Print settings (from admin template)
+  include_logo Boolean   @default(true)
+  header_html  String?
+  // Meta
+  deleted_at   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  exam    Exam    @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id])
+  faculty Faculty @relation(fields: [faculty_id], references: [id])
+
+  @@index([exam_id, subject_id])
+  @@index([faculty_id])
+}
+
+model ExamMark {
+  id               String    @id @default(uuid())
+  exam_id          String
+  student_id       String
+  subject_id       String
+  exam_type        ExamType
+  marks_obtained   Float
+  max_marks        Float
+  is_absent        Boolean   @default(false)
+  is_withheld      Boolean   @default(false)
+  remarks          String?
+  entered_by       String?
+  verified_by      String?
+  verified_at      DateTime?
+  result_published Boolean   @default(false)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  exam    Exam    @relation(fields: [exam_id], references: [id], onDelete: Cascade)
+  student Student @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  subject Subject @relation(fields: [subject_id], references: [id])
+
+  @@unique([exam_id, student_id, subject_id])
+  @@index([exam_id])
+  @@index([student_id])
+  @@index([subject_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// STUDENT FEE MODULE
+// ─────────────────────────────────────────────────────────────
+
+model FeeStructure {
+  id           String   @id @default(uuid())
+  session_id   String
+  program_id   String?
+  branch_id    String?
+  semester     Int? // null = all semesters
+  title        String
+  total_amount Float
+  installments Int      @default(1)
+  // Components breakdown
+  components   Json // { "tuition": 60000, "development": 15000, ... }
+  // Meta
+  created_by   String?
+  is_active    Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  session  AcademicSession @relation(fields: [session_id], references: [id])
+  payments FeePayment[]
+
+  @@index([session_id])
+  @@index([program_id])
+  @@index([branch_id])
+}
+
+model Scholarship {
+  id          String   @id @default(uuid())
+  name        String
+  code        String   @unique
+  type        String // MERIT|SPORTS|SC_ST|MINORITY|GOVT|INSTITUTE
+  amount_type String   @default("PERCENTAGE") // PERCENTAGE | FIXED
+  amount      Float // % or fixed ₹
+  max_amount  Float?
+  eligibility String?
+  session_id  String?
+  is_active   Boolean  @default(true)
+  created_by  String?
+  createdAt   DateTime @default(now())
+
+  payments FeePayment[]
+
+  @@index([type])
+  @@index([is_active])
+}
+
+model FeePayment {
+  id                   String    @id @default(uuid())
+  student_id           String
+  fee_structure_id     String?
+  session_id           String
+  // Amount
+  total_amount         Float
+  paid_amount          Float     @default(0)
+  due_amount           Float
+  status               FeeStatus @default(PENDING)
+  // Installments
+  installment_no       Int       @default(1)
+  installment_due_date DateTime? @db.Date
+  // Payment details (manual entry)
+  payment_date         DateTime? @db.Date
+  payment_mode         String? // CASH|DD|NEFT|CHEQUE
+  receipt_no           String?
+  transaction_ref      String?
+  bank_ref             String?
+  // Scholarship/waiver
+  scholarship_id       String?
+  waiver_amount        Float     @default(0)
+  waiver_reason        String?
+  // Admin
+  received_by          String?
+  verified_by          String?
+  verified_at          DateTime?
+  remarks              String?
+  receipt_url          String? // PDF receipt URL
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  student       Student         @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  fee_structure FeeStructure?   @relation(fields: [fee_structure_id], references: [id])
+  session       AcademicSession @relation(fields: [session_id], references: [id])
+  scholarship   Scholarship?    @relation(fields: [scholarship_id], references: [id])
+
+  @@index([student_id])
+  @@index([session_id])
+  @@index([status])
+}
+
+// ─────────────────────────────────────────────────────────────
+// HR / SALARY MODULE
+// ─────────────────────────────────────────────────────────────
+
+model SalaryComponent {
+  id           String   @id @default(uuid())
+  name         String // "Basic", "HRA", "DA", "PF", "TDS"
+  code         String   @unique // "BASIC", "HRA", "DA", "PF", "ESI", "TDS", "PT"
+  type         String // EARNING | DEDUCTION | STATUTORY
+  calc_type    String   @default("FIXED") // FIXED | PERCENTAGE_OF_BASIC | PERCENTAGE_OF_GROSS
+  value        Float // amount or percentage
+  is_taxable   Boolean  @default(false)
+  is_statutory Boolean  @default(false) // PF, ESI, TDS, PT
+  is_active    Boolean  @default(true)
+  sort_order   Int      @default(0)
+  description  String?
+  created_by   String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  slipComponents SalarySlipComponent[]
+
+  @@index([type, is_active])
+}
+
+model SalarySlip {
+  id               String       @id @default(uuid())
+  faculty_id       String
+  cycle_id         String? // optional link to SalaryCycle
+  month            Int // 1-12
+  year             Int
+  status           SalaryStatus @default(DRAFT)
+  // Summary
+  gross_salary     Float
+  total_deductions Float
+  net_salary       Float
+  working_days     Int
+  present_days     Int
+  lop_days         Int          @default(0) // Loss of pay days
+  // Approval
+  generated_by     String?
+  generated_at     DateTime?
+  approved_by      String?
+  approved_at      DateTime?
+  paid_by          String?
+  paid_at          DateTime?
+  // PDF
+  pdf_url          String?
+  remarks          String?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  cycle      SalaryCycle?          @relation(fields: [cycle_id], references: [id])
+  faculty    Faculty               @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  components SalarySlipComponent[]
+
+  @@unique([faculty_id, month, year])
+  @@index([faculty_id])
+  @@index([month, year])
+  @@index([status])
+}
+
+model SalarySlipComponent {
+  id           String  @id @default(uuid())
+  slip_id      String
+  component_id String
+  amount       Float
+  is_earning   Boolean
+
+  slip      SalarySlip      @relation(fields: [slip_id], references: [id], onDelete: Cascade)
+  component SalaryComponent @relation(fields: [component_id], references: [id])
+
+  @@unique([slip_id, component_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// TRAINING — STUDENT SKILL CARD
+// ─────────────────────────────────────────────────────────────
+
+model StudentSkillCard {
+  id                     String    @id @default(uuid())
+  student_id             String    @unique
+  branch_id              String?
+  program_id             String?
+  domain_track           String? // student's chosen domain track
+  batch_year             Int?
+  // Summary (computed)
+  total_entries          Int       @default(0)
+  completed_entries      Int       @default(0)
+  // Placement readiness
+  readiness_level        String? // FOUNDATIONAL | JOB_READY | PLACEMENT_READY
+  domain_track_completed Boolean   @default(false)
+  placement_score        Float?
+  domain_rank            Int?
+  // Meta
+  issued_at              DateTime?
+  last_updated           DateTime  @default(now())
+  issued_by              String?
+  pdf_url                String?
+
+  student Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+  entries SkillCardEntry[]
+
+  @@index([student_id])
+  @@index([branch_id])
+}
+
+model SkillCardEntry {
+  id              String    @id @default(uuid())
+  skill_card_id   String
+  student_id      String
+  // Location in card
+  year_no         Int // 1-4
+  semester_no     Int // 1-8
+  entry_no        Int // row number
+  // Training details
+  training_id     String? // link to Training if institute training
+  course_name     String
+  provider        String
+  duration        String? // "30 hrs", "1 Day", "Self-paced"
+  course_url      String?
+  type            String    @default("SELF_LEARNING") // INSTITUTE_OFFLINE | COMPANY_WORKSHOP | SELF_LEARNING
+  // Completion
+  is_completed    Boolean   @default(false)
+  completion_date DateTime? @db.Date
+  certificate_url String?
+  // Verification
+  is_verified     Boolean   @default(false)
+  verified_by     String? // mentor/admin who verified
+  verified_at     DateTime?
+  verified_sign   String?
+  // CO-PO
+  co_mapping      String[]  @default([])
+  // Meta
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  skill_card StudentSkillCard @relation(fields: [skill_card_id], references: [id], onDelete: Cascade)
+  student    Student          @relation(fields: [student_id], references: [id], onDelete: Cascade)
+
+  @@index([skill_card_id])
+  @@index([student_id, year_no, semester_no])
+  @@index([is_completed])
+  @@index([is_verified])
+}
+
+// ─────────────────────────────────────────────────────────────
+// TRAINING — add missing TrainingEnrollment relations
+// (Already added in training_schema_addition.prisma)
+// These patch the Student model relations
+// ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// DEPT-SCOPED ADMIN PERMISSIONS
+// ─────────────────────────────────────────────────────────────
+
+model AdminDeptScope {
+  id         String   @id @default(uuid())
+  user_id    String
+  dept_id    String
+  role       String   @default("DEPT_ADMIN") // DEPT_ADMIN | MODULE_HEAD
+  modules    String[] @default([]) // [] = all modules, or ["students","faculty"]
+  granted_by String?
+  is_active  Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  dept Department @relation(fields: [dept_id], references: [id])
+
+  @@unique([user_id, dept_id])
+  @@index([user_id])
+  @@index([dept_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// BACK-RELATIONS TO PATCH ON EXISTING MODELS
+// Add these lines to respective models in schema.prisma:
+//
+// Student:
+//   extraAttendance       ExtraAttendance[]
+//   leaveApprovals        StudentLeaveApproval[]  (via StudentLeave)
+//   assignments           AssignmentSubmission[]
+//   assignmentGrades      AssignmentGrade[]
+//   examSeatings          ExamSeating[]
+//   hallTickets           HallTicket[]
+//   examMarks             ExamMark[]
+//   feePayments           FeePayment[]
+//   skillCard             StudentSkillCard?
+//   skillCardEntries      SkillCardEntry[]
+//
+// Faculty:
+//   assignments           Assignment[]
+//   questionPapers        QuestionPaper[]
+//   salarySlips           SalarySlip[]
+//
+// Subject:
+//   assignments           Assignment[]
+//   examSchedules         ExamSchedule[]
+//   examMarks             ExamMark[]
+//   questionPapers        QuestionPaper[]
+//
+// Room:
+//   examRooms             ExamRoom[]
+//
+// Department:
+//   adminScopes           AdminDeptScope[]
+//
+// AcademicSession:
+//   calendarEvents        AcademicCalendarEvent[]
+//   extraAttendance       ExtraAttendance[]
+//   assignments           Assignment[]
+//   exams                 Exam[]
+//   feeStructures         FeeStructure[]
+//   feePayments           FeePayment[]
+//
+// StudentLeave:
+//   approvals             StudentLeaveApproval[]
+// ─────────────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────
+// HR LEAVE RULES & SALARY CALCULATOR — Phase 2
+// ─────────────────────────────────────────────────────────────
+
+model LeaveRulePolicy {
+  id         String   @id @default(uuid())
+  name       String // "Teaching Staff 2025-26"
+  session_id String
+  staff_type String // TEACHING | NON_TEACHING | ALL
+  dept_id    String? // null = all departments
+  is_active  Boolean  @default(true)
+  created_by String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session AcademicSession     @relation(fields: [session_id], references: [id])
+  rules   LeaveRule[]
+  quotas  FacultyLeaveQuota[]
+
+  @@index([session_id])
+}
+
+model LeaveRule {
+  id              String   @id @default(uuid())
+  policy_id       String
+  leave_type      String // CL | EL | ML | SL | LWP | SLOT | RESTRICTED
+  label           String // "Casual Leave", "Earned Leave"
+  max_per_session Int // max leaves allowed in full academic session
+  max_consecutive Int      @default(3) // max continuous days
+  max_in_month    Int      @default(2) // max in one calendar month
+  carry_forward   Boolean  @default(false)
+  encashable      Boolean  @default(false)
+  requires_cover  Boolean  @default(true) // must assign cover faculty
+  min_notice_days Int      @default(1)
+  applies_to      String   @default("ALL") // TEACHING | NON_TEACHING | ALL
+  is_slot_based   Boolean  @default(false) // winter/summer break slots
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  policy LeaveRulePolicy @relation(fields: [policy_id], references: [id], onDelete: Cascade)
+
+  @@unique([policy_id, leave_type])
+  @@index([policy_id])
+}
+
+model LeaveSlot {
+  id         String   @id @default(uuid())
+  name       String // "Winter Break 2025", "Summer Break 2026"
+  slot_type  String // WINTER | SUMMER | SPECIAL
+  session_id String
+  start_date DateTime @db.Date
+  end_date   DateTime @db.Date
+  max_leaves Int // max leave days faculty can take in this slot
+  staff_type String   @default("ALL")
+  dept_id    String?
+  is_active  Boolean  @default(true)
+  created_by String?
+  createdAt  DateTime @default(now())
+
+  session AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@index([session_id])
+}
+
+model SalaryCycle {
+  id           String    @id @default(uuid())
+  session_id   String
+  month        Int
+  year         Int
+  total_days   Int // HR sets: 28/30/31 or custom range days
+  working_days Int // after removing sundays/holidays
+  from_date    DateTime  @db.Date
+  to_date      DateTime  @db.Date
+  is_locked    Boolean   @default(false)
+  locked_by    String?
+  locked_at    DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  session     AcademicSession @relation(fields: [session_id], references: [id])
+  salarySlips SalarySlip[]
+
+  @@unique([session_id, month, year])
+  @@index([session_id])
+}
+
+model FacultyLeaveQuota {
+  id              String   @id @default(uuid())
+  faculty_id      String
+  policy_id       String
+  session_id      String
+  leave_type      String
+  allocated       Int      @default(0)
+  used            Int      @default(0)
+  pending         Int      @default(0)
+  lapsed          Int      @default(0)
+  carried_forward Int      @default(0)
+  updatedAt       DateTime @updatedAt
+
+  faculty Faculty         @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+  policy  LeaveRulePolicy @relation(fields: [policy_id], references: [id])
+  session AcademicSession @relation(fields: [session_id], references: [id])
+
+  @@unique([faculty_id, session_id, leave_type])
+  @@index([faculty_id, session_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// PERMISSION GROUPS — reusable named permission bundles
+// ─────────────────────────────────────────────────────────────
+
+model PermissionGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique // "TT Coordinator", "Faculty Basic", "HR Manager"
+  description String?
+  color       String   @default("blue") // for UI badge
+  permissions String[] // array of permission keys e.g. ["timetable.view","timetable.manage"]
+  is_active   Boolean  @default(true)
+  created_by  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  assignments UserPermissionGroup[]
+}
+
+model UserPermissionGroup {
+  id          String   @id @default(uuid())
+  user_id     String
+  group_id    String
+  assigned_by String?
+  assignedAt  DateTime @default(now())
+
+  user  User            @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  group PermissionGroup @relation(fields: [group_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, group_id])
+  @@index([user_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// HOLIDAY MODULE
+// ─────────────────────────────────────────────────────────────
+model Holiday {
+  id         String   @id @default(uuid())
+  date       DateTime @db.Date
+  name       String
+  type       String   @default("GENERAL") // GENERAL | RESTRICTED | OPTIONAL | GAZETTED
+  session_id String?
+  dept_id    String? // null = institute-wide
+  is_active  Boolean  @default(true)
+  created_by String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  session    AcademicSession? @relation(fields: [session_id], references: [id])
+  department Department?      @relation(fields: [dept_id], references: [id])
+
+  @@unique([date, dept_id])
+  @@index([date])
+  @@index([session_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// AFFILIATED UNIVERSITY
+// ─────────────────────────────────────────────────────────────
+model University {
+  id        String   @id @default(uuid())
+  name      String
+  code      String   @unique
+  address   String?
+  website   String?
+  is_active Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  affiliations ProgramAffiliation[]
+}
+
+model ProgramAffiliation {
+  id             String    @id @default(uuid())
+  university_id  String
+  program_id     String?
+  branch_id      String?
+  affiliation_no String
+  valid_from     DateTime? @db.Date
+  valid_to       DateTime? @db.Date
+  is_active      Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  university University @relation(fields: [university_id], references: [id], onDelete: Cascade)
+  program    Program?   @relation(fields: [program_id], references: [id])
+  branch     Branch?    @relation(fields: [branch_id], references: [id])
+
+  @@index([university_id])
+  @@index([program_id])
+  @@index([branch_id])
+}
+
+// ─────────────────────────────────────────────────────────────
+// NOTIFICATION / CRON SYSTEM
+// ─────────────────────────────────────────────────────────────
+model NotificationConfig {
+  id             String   @id @default(uuid())
+  type           String   @unique // EMAIL | WHATSAPP
+  is_enabled     Boolean  @default(false)
+  // Email config
+  smtp_host      String?
+  smtp_port      Int?
+  smtp_user      String?
+  smtp_pass      String? // encrypted
+  smtp_from      String?
+  smtp_from_name String?
+  // WhatsApp config (placeholder — service TBD)
+  wa_api_key     String?
+  wa_from        String?
+  wa_provider    String? // e.g. "twilio", "wati", "360dialog"
+  // Common
+  updated_by     String?
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
+
+model NotificationTemplate {
+  id            String   @id @default(uuid())
+  key           String   @unique // e.g. "ATTENDANCE_REPORT", "EXAM_SCHEDULE"
+  name          String
+  subject       String? // email subject
+  body_email    String?  @db.Text
+  body_whatsapp String?  @db.Text
+  variables     String[] // available variables like ["{{student_name}}", "{{date}}"]
+  is_active     Boolean  @default(true)
+  created_by    String?
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+  cronSchedules CronSchedule[]
+}
+
+model CronSchedule {
+  id           String    @id @default(uuid())
+  name         String
+  key          String    @unique // e.g. "DAILY_ATTENDANCE_REPORT"
+  cron_expr    String // e.g. "0 8 * * *" = daily 8am
+  template_key String?
+  channel      String    @default("EMAIL") // EMAIL | WHATSAPP | BOTH
+  recipients   String[] // email addresses OR phone numbers
+  is_active    Boolean   @default(true)
+  last_run     DateTime?
+  last_status  String? // SUCCESS | FAILED
+  last_error   String?
+  created_by   String?
+  updatedAt    DateTime  @updatedAt
+  createdAt    DateTime  @default(now())
+
+  template NotificationTemplate? @relation(fields: [template_key], references: [key])
+}
+
+// ─────────────────────────────────────────────────────────────
+// FACULTY QUALIFICATION (separate table)
+// Teaching faculty: 10th & 12th mandatory, higher optional
+// Non-teaching: no qualification needed
+// ─────────────────────────────────────────────────────────────
+model FacultyQualification {
+  id               String   @id @default(uuid())
+  faculty_id       String
+  level            String // TENTH | TWELFTH | DIPLOMA | BACHELOR | MASTER | PHD | OTHER
+  board_university String?
+  institution      String?
+  subject_stream   String?
+  percentage       Float?
+  grade            String?
+  year_of_passing  Int?
+  certificate_url  String?
+  is_verified      Boolean  @default(false)
+  verified_by      String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  faculty Faculty @relation(fields: [faculty_id], references: [id], onDelete: Cascade)
+
+  @@index([faculty_id])
+  @@index([level])
 }

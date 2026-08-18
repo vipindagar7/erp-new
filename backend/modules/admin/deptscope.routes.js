@@ -1,0 +1,12 @@
+import { Router } from "express";
+import { authenticate, superAdminOnly } from "../../middlewares/auth.middleware.js";
+import * as svc from "./deptscope.service.js";
+const router = Router();
+const ok   = (res, d, msg="OK", s=200) => res.status(s).json({ success:true, message:msg, data:d });
+const fail = (res, e, next) => e.status ? res.status(e.status).json({ success:false, message:e.message }) : next(e);
+router.use(authenticate, superAdminOnly);
+router.get(   "/",          async (r,s,n)=>{ try{ok(s,await svc.listScopes(r.query));}catch(e){fail(s,e,n);} });
+router.get(   "/user/:uid", async (r,s,n)=>{ try{ok(s,await svc.getUserScopes(r.params.uid));}catch(e){fail(s,e,n);} });
+router.post(  "/grant",     async (r,s,n)=>{ try{ok(s,await svc.grantScope(r.body.user_id,r.body.dept_id,r.body.role,r.body.modules||[],r.user.id),"Granted",201);}catch(e){fail(s,e,n);} });
+router.delete("/revoke",    async (r,s,n)=>{ try{ok(s,await svc.revokeScope(r.body.user_id,r.body.dept_id));}catch(e){fail(s,e,n);} });
+export default router;

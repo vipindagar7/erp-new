@@ -1,28 +1,26 @@
 // backend/modules/reports/reports.routes.js
-import express from "express";
-import { authenticate, authorize } from "../../middlewares/auth.middleware.js";
-import {
-  exportStudentsBySection,
-  exportStudentsByDept,
-  exportFacultyList,
-  exportEnrollmentSummary,
-  exportFeedbackSummary,
-} from "./reports.controller.js";
-import {
-  validate,
-  bySectionQuerySchema,
-  byDeptQuerySchema,
-  enrollmentQuerySchema,
-  feedbackParamSchema,
-} from "./reports.validator.js";
+import { Router } from "express";
+import { authenticate, requirePerm, superAdminOnly } from "../../middlewares/auth.middleware.js";
+import * as c from "./reports.controller.js";
 
-const router = express.Router();
-router.use(authenticate, authorize("ADMIN","SUPER_ADMIN"));
+const router = Router();
+router.use(authenticate);
 
-router.get("/students/by-section", validate(bySectionQuerySchema,  "query"),  exportStudentsBySection);
-router.get("/students/by-dept",    validate(byDeptQuerySchema,      "query"),  exportStudentsByDept);
-router.get("/faculty",                                                          exportFacultyList);
-router.get("/enrollments",         validate(enrollmentQuerySchema,  "query"),  exportEnrollmentSummary);
-router.get("/feedback/:formId",    validate(feedbackParamSchema,    "params"), exportFeedbackSummary);
+// ── Catalog ───────────────────────────────────────────────────
+router.get("/catalog", c.getCatalog);
+
+// ── Generic dispatcher ────────────────────────────────────────
+router.get( "/generate/:report_id", requirePerm("reports:view"), c.generate);
+router.post("/generate/:report_id", requirePerm("reports:view"), c.generate);
+
+// ── Legacy explicit endpoints ─────────────────────────────────
+router.get("/students",              requirePerm("reports:view"), c.studentsAll);
+router.get("/students/by-section",   requirePerm("reports:view"), c.studentsBySection);
+router.get("/students/by-dept",      requirePerm("reports:view"), c.studentsByDept);
+router.get("/faculty",               requirePerm("reports:view"), c.facultyAll);
+router.get("/faculty/workload",      requirePerm("reports:view"), c.facultyWorkload);
+router.get("/sections",              requirePerm("reports:view"), c.sectionsAll);
+router.get("/sections/subjects",     requirePerm("reports:view"), c.sectionSubjects);
+router.get("/enrollments",           requirePerm("reports:view"), c.enrollments);
 
 export default router;

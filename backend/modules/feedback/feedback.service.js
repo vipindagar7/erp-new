@@ -4,16 +4,16 @@ import prisma from "../../utils/prisma.js";
 // ── Section label helper ──────────────────────────────────────
 const fmtSecLabel = (sec, mode = "compact") => {
   if (!sec) return "—";
-  const prog = sec.course?.program?.name || "";
-  const course = sec.course?.name || "";
-  const sem = sec.semester != null ? `Sem ${sec.semester}` : "";
-  const name = sec.name ? `Sec ${sec.name}` : "";
+  const prog   = sec.branch?.program?.name || sec.course?.program?.name || "";
+  const branch = sec.branch?.name          || sec.course?.name          || "";
+  const sem    = sec.semester != null ? `Sem ${sec.semester}` : "";
+  const name   = sec.name ? `Sec ${sec.name}` : "";
   if (mode === "sheet") {
-    const raw = [prog, course, sec.semester ? `${sec.semester}Sem` : "", sec.name].filter(Boolean).join(" ");
+    const raw = [prog, branch, sec.semester ? `${sec.semester}Sem` : "", sec.name].filter(Boolean).join(" ");
     return raw.replace(/[\[\]:*?/\\]/g, "").slice(0, 31);
   }
-  if (mode === "short") return [course, sem, name].filter(Boolean).join(" ");
-  return [prog, course, sem, name].filter(Boolean).join(" ");
+  if (mode === "short") return [branch, sem, name].filter(Boolean).join(" ");
+  return [prog, branch, sem, name].filter(Boolean).join(" ");
 };
 
 const usedSheetNames = new WeakMap();
@@ -38,15 +38,22 @@ const avgRating = (answers) => {
 };
 const fmtAvg = (v) => (v == null ? "—" : Number(v).toFixed(2));
 
-// ── Snapshot helper — call ONCE per student, reuse the result ─
+// ── Snapshot helper — HARDCODES all data at submission time ──
+// Called ONCE per submission. Stores names/values, NOT foreign keys.
+// So even if student section changes later, the feedback record stays accurate.
 const getStudentSnapshot = async (student_id) => {
   const student = await prisma.student.findUnique({
     where: { id: student_id },
     include: {
-      section: { select: { name: true, semester: true, batch: true } },
+      section: {
+        select: {
+          name: true, semester: true, batch: true, academic_year: true,
+          branch: { select: { name: true, program: { select: { name: true, department: { select: { name: true } } } } } },
+        },
+      },
       department: { select: { name: true } },
-      program: { select: { name: true } },
-      course: { select: { name: true } },
+      program:    { select: { name: true } },
+      branch:     { select: { name: true } },
       enrollments: {
         where: { is_current: true },
         select: { academic_year: true, semester: true },
@@ -56,14 +63,18 @@ const getStudentSnapshot = async (student_id) => {
     },
   });
   const enr = student?.enrollments?.[0];
+  // Prefer section.branch hierarchy, fallback to direct relations
   return {
-    snap_section_name: student?.section?.name ?? null,
-    snap_semester: enr?.semester ?? student?.section?.semester ?? null,
-    snap_batch: student?.section?.batch ?? null,
-    snap_dept_name: student?.department?.name ?? null,
-    snap_program_name: student?.program?.name ?? null,
-    snap_course_name: student?.course?.name ?? null,
-    snap_academic_year: enr?.academic_year ?? null,
+    snap_section_name:  student?.section?.name                                      ?? null,
+    snap_semester:      enr?.semester   ?? student?.section?.semester               ?? null,
+    snap_batch:         student?.section?.batch                                     ?? null,
+    snap_dept_name:     student?.department?.name
+                        ?? student?.section?.branch?.program?.department?.name      ?? null,
+    snap_program_name:  student?.program?.name
+                        ?? student?.section?.branch?.program?.name                  ?? null,
+    snap_branch_name:   student?.branch?.name
+                        ?? student?.section?.branch?.name                           ?? null,
+    snap_academic_year: enr?.academic_year ?? student?.section?.academic_year       ?? null,
   };
 };
 
@@ -279,7 +290,7 @@ export const updateForm = async (id, data) => {
   if (data.all_students !== undefined) u.all_students = Boolean(data.all_students);
   if (data.batch_year !== undefined) u.batch_year = data.batch_year ? parseInt(data.batch_year) : null;
   if (data.department_id !== undefined) u.department_id = data.department_id || null;
-  if (data.course_id !== undefined) u.course_id = data.course_id || null;
+  if (data.program_id !== undefined) u.program_id = data.program_id || null;
   if (data.faculty_id !== undefined) u.faculty_id = data.faculty_id || null;
   if (data.subject_id !== undefined) u.subject_id = data.subject_id || null;
   if (data.section_id !== undefined) u.section_id = data.section_id || null;
@@ -390,7 +401,8 @@ export const getFormResults = async (form_id) => {
       category: { include: { questions: { orderBy: { order: "asc" } } } },
       faculty: { select: { id: true, name: true, nick_name: true, department: { select: { id: true, name: true } } } },
       subject: { select: { id: true, name: true, code: true, nickname: true } },
-      section: { select: { id: true, name: true, course: { select: { name: true, program: { select: { name: true, department: { select: { name: true } } } } } } } },
+      section: { select: { id: true, name: true, semester: true,
+                  branch: { select: { name: true, program: { select: { name: true, department: { select: { name: true } } } } } } } },
       specialGroup: { select: { id: true, name: true } },
       _count: { select: { responses: true } },
     },
@@ -426,7 +438,7 @@ export const exportFormResults = async (form_id) => {
     overviewData.push(["Faculty", form.faculty?.name || "—"]);
     overviewData.push(["Subject", `${form.subject?.name || "—"} (${form.subject?.code || ""})`]);
     overviewData.push(["Section", form.section?.name || "—"]);
-    overviewData.push(["Dept", form.section?.course?.program?.department?.name || form.faculty?.department?.name || "—"]);
+    overviewData.push(["Dept", form.section?.branch?.program?.department?.name || form.faculty?.department?.name || "—"]);
   }
   if (form.specialGroup) overviewData.push(["Group", form.specialGroup.name]);
   const allAnswers = responses.flatMap((r) => r.answers);
@@ -441,7 +453,7 @@ export const exportFormResults = async (form_id) => {
     "#", "Student Name", "Roll No", "Email",
     "Department",   // ← snap_dept_name
     "Program",      // ← snap_program_name
-    "Course",       // ← snap_course_name
+    "Course",       // ← snap_branch_name
     "Section",      // ← snap_section_name
     "Semester",     // ← snap_semester
     "Batch",        // ← snap_batch
@@ -460,7 +472,7 @@ export const exportFormResults = async (form_id) => {
       // ── SNAP fields — what the student's context WAS at submission time ──
       r.snap_dept_name || "",
       r.snap_program_name || "",
-      r.snap_course_name || "",
+      r.snap_branch_name || "",
       r.snap_section_name || "",
       r.snap_semester ?? "",
       r.snap_batch || "",
@@ -523,7 +535,7 @@ export const exportFormResults = async (form_id) => {
   if (isTeaching) {
     const swData = [
       ["Section", form.section?.name || "—"],
-      ["Course", form.section?.course?.name || "—"],
+      ["Course", form.section?.branch?.name || "—"],
       ["Faculty", form.faculty?.name || "—"],
       ["Subject", form.subject?.name || "—"],
       ["Responses", responses.length],
@@ -550,7 +562,7 @@ export const exportFormResults = async (form_id) => {
     const swHeaders = ["Section (snap)", "Dept (snap)", "Program (snap)", "Course (snap)", "Responses", "Avg Rating"];
     const swRows = Object.entries(bySec).map(([sec, rs]) => {
       const first = rs[0];
-      return [sec, first?.snap_dept_name || "—", first?.snap_program_name || "—", first?.snap_course_name || "—", rs.length, fmtAvg(avgRating(rs.flatMap((r) => r.answers)))];
+      return [sec, first?.snap_dept_name || "—", first?.snap_program_name || "—", first?.snap_branch_name || "—", rs.length, fmtAvg(avgRating(rs.flatMap((r) => r.answers)))];
     });
     swRows.push(["TOTAL / AVERAGE", "", "", "", responses.length, fmtAvg(avgRating(responses.flatMap((r) => r.answers)))]);
     addSheet("Section-wise", [swHeaders, ...swRows],
@@ -587,7 +599,8 @@ export const exportFormResults = async (form_id) => {
       include: {
         faculty: { select: { id: true, name: true, nick_name: true, department: { select: { name: true } } } },
         subject: { select: { id: true, name: true, code: true, nickname: true } },
-        section: { select: { id: true, name: true, course: { select: { name: true, program: { select: { name: true, department: { select: { name: true } } } } } } } },
+        section: { select: { id: true, name: true, semester: true,
+                  branch: { select: { name: true, program: { select: { name: true, department: { select: { name: true } } } } } } } },
         responses: { include: { answers: { select: { question_id: true, rating: true } } } },
         _count: { select: { responses: true } },
       },
@@ -698,7 +711,7 @@ export const generateFeedbackTemplate = async (form_id) => {
 
 // ─── BULK SUBMIT — single form ────────────────────────────────
 // Captures full snapshot for every student — no FK for section/dept
-export const bulkSubmitFeedback = async (form_id, buffer) => {
+export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
   const workbook = xlsx.read(buffer, { type: "buffer" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
@@ -709,7 +722,13 @@ export const bulkSubmitFeedback = async (form_id, buffer) => {
   });
   if (!form) throw Object.assign(new Error("Form not found"), { statusCode: 404 });
   if (!form.is_active) throw Object.assign(new Error("Form is not active"), { statusCode: 400 });
-
+  // Root bypasses all restrictions — can submit to any form, active or not
+  if (!isRoot) {
+    if (!form.is_active) throw Object.assign(new Error("Form is not active"), { statusCode: 400 });
+    const now = new Date();
+    if (now < form.start_date || now > form.end_date)
+      throw Object.assign(new Error("Form is not in the submission window"), { statusCode: 400 });
+  }
   const questions = form.category?.questions || [];
   if (!questions.length) throw Object.assign(new Error("Form has no questions"), { statusCode: 400 });
 
@@ -812,6 +831,72 @@ export const generateQuestionTemplate = async () => {
 };
 
 // ─── GROUP BULK TEMPLATE ──────────────────────────────────────
+
+// ═══════════════════════════════════════════════════════════════
+// FEEDBACK FORM GROUPS (FeedbackFormGroup)
+// ═══════════════════════════════════════════════════════════════
+export const getAllGroups = async ({ category_id, is_active } = {}) => {
+  const where = {};
+  if (category_id) where.category_id = category_id;
+  if (is_active !== undefined) where.is_active = is_active === "true" || is_active === true;
+  return prisma.feedbackFormGroup.findMany({
+    where,
+    include: {
+      category:     { select: { id: true, name: true, type: true } },
+      feedbackForms: {
+        include: {
+          faculty:  { select: { id: true, name: true } },
+          subject:  { select: { id: true, name: true, code: true } },
+          section:  { select: { id: true, name: true, semester: true } },
+          _count:   { select: { responses: true } },
+        },
+      },
+      _count: { select: { feedbackForms: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+};
+
+export const getGroupById = async (id) => {
+  return prisma.feedbackFormGroup.findUnique({
+    where: { id },
+    include: {
+      category:     { include: { questions: { orderBy: { order: "asc" } } } },
+      feedbackForms: {
+        include: {
+          faculty:  { select: { id: true, name: true } },
+          subject:  { select: { id: true, name: true, code: true } },
+          section:  { select: { id: true, name: true, semester: true } },
+          _count:   { select: { responses: true } },
+        },
+      },
+    },
+  });
+};
+
+export const updateGroup = async (id, data) => {
+  const { name, description, start_date, end_date, is_active } = data;
+  return prisma.feedbackFormGroup.update({
+    where: { id },
+    data: {
+      ...(name        !== undefined && { name }),
+      ...(description !== undefined && { description }),
+      ...(start_date  !== undefined && { start_date: new Date(start_date) }),
+      ...(end_date    !== undefined && { end_date:   new Date(end_date)   }),
+      ...(is_active   !== undefined && { is_active }),
+    },
+    include: {
+      category:     { select: { id: true, name: true } },
+      feedbackForms: { include: { _count: { select: { responses: true } } } },
+    },
+  });
+};
+
+export const deleteGroup = async (id) => {
+  // Soft delete — just deactivate
+  return prisma.feedbackFormGroup.update({ where: { id }, data: { is_active: false } });
+};
+
 export const getGroupBulkTemplate = async (groupId) => {
   const group = await prisma.feedbackFormGroup.findUnique({
     where: { id: groupId },
@@ -839,8 +924,8 @@ export const getGroupBulkTemplate = async (groupId) => {
   const wb = xlsx.utils.book_new();
   const usedNames = new Set();
   const safeSheet = (sec) => {
-    const prog = sec?.course?.program?.name || "";
-    const course = sec?.course?.name || "";
+    const prog = sec?.branch?.program?.name || "";
+    const course = sec?.branch?.name || "";
     const base = `${prog} ${course}–${sec.name} Sem${sec.semester}`.replace(/[\[\]:*?/\\]/g, "").trim().slice(0, 31);
     let n = base;
     if (usedNames.has(n)) { let i = 2; while (usedNames.has(n)) { const s = `(${i++})`; n = base.slice(0, 31 - s.length) + s; } }
@@ -897,7 +982,7 @@ export const getGroupBulkTemplate = async (groupId) => {
 
     const infoRows = [
       ["TEACHING FEEDBACK BULK SUBMISSION"],
-      [`Group: ${group.name}`, `Section: ${section.name}`, `Course: ${section.course?.name}`, `Sem: ${section.semester}`, `Batch: ${section.batch || ""}`],
+      [`Group: ${group.name}`, `Section: ${section.name}`, `Branch: ${section.branch?.name}`, `Sem: ${section.semester}`, `Batch: ${section.batch || ""}`],
       [`Group ID (do not edit): ${groupId}`],
       [`Section ID (do not edit): ${section.id}`],
       [],
@@ -1100,7 +1185,7 @@ export const getTeachingReport = async ({ category_id } = {}) => {
       responses: { include: { answers: { select: { rating: true, question_id: true } } } },
       _count: { select: { responses: true } },
     },
-    orderBy: [{ section: { course: { program: { department: { name: "asc" } } } } }, { section: { name: "asc" } }],
+    orderBy: [{ section: { branch: { program: { department: { name: "asc" } } } } }, { section: { name: "asc" } }],
   });
 
   const avg = (answers) => {
@@ -1110,12 +1195,12 @@ export const getTeachingReport = async ({ category_id } = {}) => {
 
   const tree = {};
   forms.forEach((f) => {
-    const dept = f.section?.course?.program?.department || f.faculty?.department || { id: "unknown", name: "Unknown" };
-    const course = f.section?.course || { id: "unknown", name: "Unknown" };
+    const dept = f.section?.branch?.program?.department || f.faculty?.department || { id: "unknown", name: "Unknown" };
+    const course = f.section?.branch || { id: "unknown", name: "Unknown" };
     const section = f.section || { id: "unknown", name: "Unknown", semester: null, batch: null };
     const allA = f.responses.flatMap(r => r.answers);
     const dKey = dept.id;
-    const cKey = `${dept.id}::${course.id}`;
+    const cKey = `${dept.id}::${course.id}`; // course variable = branch data
     const sKey = `${dept.id}::${course.id}::${section.id}`;
     if (!tree[dKey]) tree[dKey] = { id: dept.id, name: dept.name, courses: {} };
     if (!tree[dKey].courses[cKey]) tree[dKey].courses[cKey] = { id: course.id, name: course.name, sections: {} };
@@ -1183,7 +1268,7 @@ export const exportLevelReport = async ({ level, id, category_id }) => {
       const vals = allA.filter(a => a.question_id === q.id && a.rating != null).map(a => a.rating);
       return vals.length ? fmtAvg(vals.reduce((a, b) => a + b, 0) / vals.length) : "—";
     });
-    return [f.section?.course?.program?.department?.name || "—", f.section?.course?.name || "—", f.section?.name || "—", f.section?.semester || "—", f.faculty?.name || "—", f.faculty?.nick_name || "—", f.subject?.name || "—", f.subject?.code || "—", f._count.responses, fmtAvg(calcAvg(allA)), ...qAvgs];
+    return [f.section?.branch?.program?.department?.name || "—", f.section?.branch?.name || "—", f.section?.name || "—", f.section?.semester || "—", f.faculty?.name || "—", f.faculty?.nick_name || "—", f.subject?.name || "—", f.subject?.code || "—", f._count.responses, fmtAvg(calcAvg(allA)), ...qAvgs];
   });
   addSheet("Summary", [summaryHeaders, ...summaryRows]);
 
@@ -1197,7 +1282,7 @@ export const exportLevelReport = async ({ level, id, category_id }) => {
     return [
       f.section?.name || "—", f.faculty?.name || "—", f.subject?.name || "—", f.subject?.code || "—",
       r.student?.name || "—", r.student?.roll_no || "—", r.student?.enrollment_no || "—", r.student?.user?.email || "—",
-      r.snap_dept_name || "—", r.snap_program_name || "—", r.snap_course_name || "—",
+      r.snap_dept_name || "—", r.snap_program_name || "—", r.snap_branch_name || "—",
       r.snap_section_name || "—", r.snap_semester ?? "—", r.snap_batch || "—", r.snap_academic_year || "—",
       new Date(r.submittedAt).toLocaleString("en-IN"),
       ...questions.map(q => am[q.id] ?? ""),
@@ -1205,8 +1290,8 @@ export const exportLevelReport = async ({ level, id, category_id }) => {
   }));
   addSheet("All Responses", [rHeaders, ...rRows]);
 
-  const levelLabel = level === "dept" ? forms[0]?.section?.course?.program?.department?.name
-    : level === "course" ? forms[0]?.section?.course?.name : forms[0]?.section?.name;
+  const levelLabel = level === "dept" ? forms[0]?.section?.branch?.program?.department?.name
+    : level === "course" ? forms[0]?.section?.branch?.name : forms[0]?.section?.name;
   return {
     buffer: xlsx.write(wb, { type: "buffer", bookType: "xlsx" }),
     filename: `teaching_report_${level}_${(levelLabel || "report").replace(/[^a-z0-9]/gi, "_").toLowerCase()}.xlsx`,
@@ -1326,7 +1411,7 @@ export const exportGroupResults = async (groupId) => {
   const sumRows = groupForms.map((f) => {
     const allA = f.responses.flatMap(r => r.answers);
     const qAvgs = questions.map((q) => { const vs = allA.filter(a => a.question_id === q.id && a.rating != null).map(a => a.rating); return vs.length ? fmtAvg(vs.reduce((a, b) => a + b, 0) / vs.length) : "—"; });
-    return [fmtSecLabel(f.section, "compact"), f.section?.course?.program?.department?.name || "—", f.faculty?.name || "—", f.faculty?.nick_name || "—", f.subject?.name || "—", f.subject?.code || "—", f._count.responses, fmtAvg(calcAvg(allA)), ...qAvgs];
+    return [fmtSecLabel(f.section, "compact"), f.section?.branch?.program?.department?.name || "—", f.faculty?.name || "—", f.faculty?.nick_name || "—", f.subject?.name || "—", f.subject?.code || "—", f._count.responses, fmtAvg(calcAvg(allA)), ...qAvgs];
   });
   const ws1 = xlsx.utils.aoa_to_sheet([sumHeaders, ...sumRows]);
   ws1["!cols"] = [{ wch: 14 }, { wch: 20 }, { wch: 24 }, { wch: 14 }, { wch: 28 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
@@ -1341,7 +1426,7 @@ export const exportGroupResults = async (groupId) => {
     return [
       fmtSecLabel(f.section, "short"), f.faculty?.name || "—", f.subject?.name || "—",
       r.student?.name || "—", r.student?.roll_no || "—", r.student?.user?.email || "—",
-      r.snap_dept_name || "—", r.snap_program_name || "—", r.snap_course_name || "—",
+      r.snap_dept_name || "—", r.snap_program_name || "—", r.snap_branch_name || "—",
       r.snap_section_name || "—", r.snap_semester ?? "—", r.snap_batch || "—", r.snap_academic_year || "—",
       new Date(r.submittedAt).toLocaleString("en-IN"),
       ...questions.map(q => am[q.id] ?? ""),
@@ -1354,4 +1439,125 @@ export const exportGroupResults = async (groupId) => {
     buffer: xlsx.write(wb, { type: "buffer", bookType: "xlsx" }),
     filename: `group_${group.name.replace(/[^a-z0-9]/gi, "_").toLowerCase()}_results.xlsx`,
   };
+};
+// ═══════════════════════════════════════════════════════════════
+// ALIASES & MISSING FUNCTIONS
+// ═══════════════════════════════════════════════════════════════
+
+// toggleForm → toggleFormActive alias
+export const toggleForm = toggleFormActive;
+
+// setActionTaken — set action_taken field on a form
+export const setActionTaken = async (form_id, action_taken) => {
+  return prisma.feedbackForm.update({
+    where: { id: form_id },
+    data: { action_taken: action_taken || null },
+  });
+};
+
+// getBulkSubmitTemplate — generate xlsx template for bulk submit
+export const getBulkSubmitTemplate = async (form_id) => {
+  const form = await prisma.feedbackForm.findUnique({
+    where: { id: form_id },
+    include: { category: { include: { questions: { orderBy: { order: "asc" } } } } },
+  });
+  if (!form) throw Object.assign(new Error("Form not found"), { status: 404 });
+
+  const questions = form.category?.questions || [];
+  const HEADERS   = [
+    "student_email",
+    "submitted_at (optional, YYYY-MM-DD HH:MM:SS)",
+    ...questions.map((q, i) => `Q${i+1}_${q.question.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, "")}`),
+  ];
+  const SAMPLE = [
+    "student@eit.edu", "",
+    ...questions.map(q => q.type === "RATING" ? "5" : q.type === "MCQ" ? (q.options?.[0] || "Option1") : "Sample answer"),
+  ];
+
+  const instructions = [
+    ["EIT — BULK FEEDBACK SUBMISSION TEMPLATE"],
+    ["Form:", form.title],
+    [""],
+    ["INSTRUCTIONS:"],
+    ["• student_email: must match the student's login email"],
+    ["• Rating questions (RATING): enter 1-5"],
+    ["• Text questions (TEXT): enter any text"],
+    ["• MCQ questions: enter exact option text"],
+    ["• submitted_at: optional override date, leave blank for current time"],
+    ["• Do NOT modify column headers"],
+    ["• Root admin only — this is a privileged operation"],
+  ];
+
+  const wb = xlsx.utils.book_new();
+  const wsNotes = xlsx.utils.aoa_to_sheet(instructions);
+  wsNotes["!cols"] = [{ wch: 60 }];
+  xlsx.utils.book_append_sheet(wb, wsNotes, "Instructions");
+
+  const wsData  = xlsx.utils.aoa_to_sheet([HEADERS, SAMPLE]);
+  wsData["!cols"] = HEADERS.map(h => ({ wch: Math.max(h.length + 2, 20) }));
+  xlsx.utils.book_append_sheet(wb, wsData, "Data");
+
+  // Question reference sheet
+  const wsQ = xlsx.utils.aoa_to_sheet([
+    ["Column", "Question", "Type", "Options / Range"],
+    ...questions.map((q, i) => [
+      `Q${i+1}_${q.question.slice(0,30).replace(/[^a-zA-Z0-9 ]/g,"")}`,
+      q.question,
+      q.type,
+      q.type === "RATING" ? "1-5 (1=Poor, 5=Excellent)" :
+      q.type === "MCQ"    ? (q.options || []).join(", ") : "Free text",
+    ]),
+  ]);
+  wsQ["!cols"] = [{ wch:35 },{ wch:50 },{ wch:10 },{ wch:40 }];
+  xlsx.utils.book_append_sheet(wb, wsQ, "Questions");
+
+  const raw = xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+};
+
+// getQuestionsTemplate — bulk upload template for questions
+export const getQuestionsTemplate = async () => {
+  const categories = await prisma.feedbackCategory.findMany({
+    where: { is_active: true }, select: { id: true, name: true }, orderBy: { name: "asc" },
+  });
+  const wb   = xlsx.utils.book_new();
+  const HEADERS = ["Category ID*","Question*","Type*","Required","Order","Options (MCQ, comma-separated)"];
+  const SAMPLE  = [categories[0]?.id || "paste-category-id-here", "How would you rate teaching quality?", "RATING", "true", "1", ""];
+  const wsData  = xlsx.utils.aoa_to_sheet([HEADERS, SAMPLE]);
+  wsData["!cols"] = HEADERS.map(h => ({ wch: Math.max(h.length+2, 20) }));
+  xlsx.utils.book_append_sheet(wb, wsData, "Data");
+  const wsCats = xlsx.utils.aoa_to_sheet([
+    ["Category ID (paste into template)", "Category Name", "Type"],
+    ...categories.map(c => [c.id, c.name, c.type]),
+  ]);
+  wsCats["!cols"] = [{ wch:38 },{ wch:30 },{ wch:15 }];
+  xlsx.utils.book_append_sheet(wb, wsCats, "Categories");
+  xlsx.utils.book_append_sheet(wb, xlsx.utils.aoa_to_sheet([
+    ["FIELD","VALUES"],["Type","RATING | TEXT | MCQ"],["Required","true | false"],
+  ]), "Valid Values");
+  const raw = xlsx.write(wb, { type:"buffer", bookType:"xlsx" });
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
+};
+
+// exportTeachingReport — export teaching report to xlsx
+export const exportTeachingReport = async (level, id, filters = {}) => {
+  // level: "faculty" | "subject" | "department"
+  const report = await getTeachingReport({ ...filters, [level + "_id"]: id });
+  const wb = xlsx.utils.book_new();
+  const ws = xlsx.utils.aoa_to_sheet([
+    ["Teaching Feedback Export"],
+    ["Level:", level, "ID:", id],
+    ["Generated:", new Date().toLocaleString("en-IN")],
+    [],
+    ["Form","Faculty","Subject","Section","Responses","Avg Rating"],
+    ...(report.forms || []).map(f => [
+      f.title, f.faculty?.name || "—", f.subject?.name || "—",
+      f.section?.name || "—", f._count?.responses || 0,
+      f.avg_rating || "—",
+    ]),
+  ]);
+  ws["!cols"] = [{ wch:40 },{ wch:24 },{ wch:24 },{ wch:14 },{ wch:12 },{ wch:12 }];
+  xlsx.utils.book_append_sheet(wb, ws, "Teaching Report");
+  const raw = xlsx.write(wb, { type:"buffer", bookType:"xlsx" });
+  return Buffer.isBuffer(raw) ? raw : Buffer.from(raw);
 };

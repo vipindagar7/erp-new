@@ -1,4 +1,4 @@
-import  prisma  from "../../utils/prisma.js";
+import prisma from "../../utils/prisma.js";
 import { autoAssignSubjectsToSection } from "../curriculum/curriculum.service.js";
 const masterClient = prisma;
 const replicaClient = prisma;
@@ -7,22 +7,38 @@ import bcrypt from "bcryptjs";
 // ── Shared include ────────────────────────────────────────────────────────────
 const studentInclude = {
   user: { select: { id: true, email: true, role: true, isBlocked: true } },
-  department: { select: { id: true, name: true } },
+  department: { select: { id: true, name: true, code: true } },
+  program: { select: { id: true, name: true, code: true } },
+  branch: { select: { id: true, name: true, code: true } },
   section: {
     select: {
-      id: true, name: true, semester: true,
-      course: { select: { id: true, name: true, program: { select: { id: true, name: true } } } },
+      id: true, name: true, code: true, semester: true,
+      academic_year: true, batch_year: true, batch: true,
+      branch: {
+        select: {
+          id: true, name: true, code: true,
+          program: {
+            select: {
+              id: true, name: true, code: true,
+              department: { select: { id: true, name: true, code: true } },
+            },
+          },
+        },
+      },
     },
   },
-  course: { select: { id: true, name: true } },
-  program: { select: { id: true, name: true } },
   enrollments: {
     orderBy: { enrolled_at: "desc" },
     select: {
       id: true, academic_year: true, semester: true,
       status: true, is_current: true, remarks: true,
       enrolled_at: true,
-      section: { select: { id: true, name: true } },
+      section: {
+        select: {
+          id: true, name: true, code: true, semester: true,
+          branch: { select: { name: true } },
+        },
+      },
     },
   },
 };
@@ -66,7 +82,8 @@ export function getCurrentSemesterParity() {
 export const getAllStudents = async ({
   page = 1, limit = 10, search,
   // Single filters (backwards compat)
-  dept_id, section_id, course_id, program_id,
+  dept_id, section_id, branch_id, program_id,
+  course_id,  // legacy alias for branch_id
   // Multi-value filters (comma-separated strings or arrays)
   dept_ids, section_ids, course_ids, program_ids,
   // Other filters
@@ -83,13 +100,13 @@ export const getAllStudents = async ({
 
   const deptFilter = parseMulti(dept_ids) || (dept_id ? [dept_id] : null);
   const sectionFilter = parseMulti(section_ids) || (section_id ? [section_id] : null);
-  const courseFilter = parseMulti(course_ids) || (course_id ? [course_id] : null);
+  const branchFilter = parseMulti(course_ids) || (branch_id ? [branch_id] : null) || (course_id ? [course_id] : null);
   const programFilter = parseMulti(program_ids) || (program_id ? [program_id] : null);
 
   const where = {
     ...(deptFilter && { dept_id: { in: deptFilter } }),
     ...(sectionFilter && { section_id: { in: sectionFilter } }),
-    ...(courseFilter && { course_id: { in: courseFilter } }),
+    ...(branchFilter && { branch_id: { in: branchFilter } }),
     ...(programFilter && { program_id: { in: programFilter } }),
     ...(gender && { gender }),
     ...(batch_year && { batch_year: parseInt(batch_year) }),
@@ -160,13 +177,14 @@ export const createStudent = async (data) => {
   // Auto-derive dept/course/program from section
   const section = await replicaClient.section.findUnique({
     where: { id: section_id },
-    include: { course: { include: { program: { include: { department: true } } } } },
+    include: { branch: { include: { program: { include: { department: true } } } } },
   });
+
   if (!section) { const e = new Error("Section not found"); e.statusCode = 404; throw e; }
 
-  const course_id = section.course_id;
-  const program_id = section.course.program_id;
-  const dept_id = section.course.program.dept_id;
+  const branch_id = section.branch_id;
+  const program_id = section.branch?.program_id;
+  const dept_id = section.branch?.program?.dept_id;
 
   // Uniqueness checks
   const [existEmail, existRoll] = await Promise.all([
@@ -212,7 +230,13 @@ export const createStudent = async (data) => {
         city: local_address_city || null,
         state: local_address_state || null,
         pincode: local_address_zipcode || null,
-        dept_id, section_id, course_id, program_id,
+        dept_id, section_id, branch_id, program_id,
+        alt_contact_number: alt_contact_number || null,
+        admission_date: admission_date || null,
+        nick_name: nick_name || null,
+        is_hosteller: is_hosteller === "true" || is_hosteller === true || false,
+        is_using_transport: is_using_transport === "true" || is_using_transport === true || false,
+        biometric_id: biometric_id || null,
       },
     });
 
@@ -223,7 +247,7 @@ export const createStudent = async (data) => {
         section_id,
         academic_year,
         semester: parseInt(semester),
-        dept_id, course_id, program_id,
+        dept_id, branch_id, program_id,
         batch_year: 0,
         status: "ACTIVE",
         is_current: true,
@@ -299,13 +323,13 @@ export const updateStudent = async (id, data) => {
   if (data.section_id && data.section_id !== existing.section_id) {
     const section = await replicaClient.section.findUnique({
       where: { id: data.section_id },
-      include: { course: { include: { program: { include: { department: true } } } } },
+      include: { branch: { include: { program: { include: { department: true } } } } },
     });
     if (!section) { const e = new Error("Section not found"); e.statusCode = 404; throw e; }
     u.section_id = data.section_id;
-    u.course_id = section.course_id;
-    u.program_id = section.course.program_id;
-    u.dept_id = section.course.program.dept_id;
+    u.branch_id = section.branch_id;
+    u.program_id = section.branch?.program_id;
+    u.dept_id = section.branch?.program?.dept_id;
   }
 
   return masterClient.student.update({
@@ -389,7 +413,7 @@ export const promoteStudent = async (id) => {
         session_id: await getCurrentSessionId(),
         section_id: student.section_id,
         dept_id: activeEnrollment.dept_id,
-        course_id: activeEnrollment.course_id,
+        branch_id: activeEnrollment.branch_id,
         program_id: activeEnrollment.program_id,
         academic_year: next.academic_year,
         semester: next.semester,
@@ -478,7 +502,7 @@ export const bulkPromoteSection = async (section_id, parity) => {
             student_id: student.id,
             section_id: student.section_id,
             dept_id: activeEnrollment.dept_id,
-            course_id: activeEnrollment.course_id,
+            branch_id: activeEnrollment.branch_id,
             session_id: await getCurrentSessionId(),
             program_id: activeEnrollment.program_id,
             academic_year: next.academic_year,
@@ -639,22 +663,23 @@ export const changeStudentSection = async (student_id, new_section_id) => {
     }),
     replicaClient.section.findUnique({
       where: { id: new_section_id },
-      include: { course: { include: { program: { include: { department: true } } } } },
+      include: { branch: { include: { program: { include: { department: true } } } } },
     }),
   ]);
 
   if (!student) { const e = new Error("Student not found"); e.statusCode = 404; throw e; }
   if (!newSection) { const e = new Error("Section not found"); e.statusCode = 404; throw e; }
 
-  const course_id = newSection.course_id;
-  const program_id = newSection.course.program_id;
-  const dept_id = newSection.course.program.dept_id;
+  const branch_id = newSection.branch_id;
+  const course_id = branch_id; // legacy alias
+  const program_id = newSection.branch?.program_id;
+  const dept_id = newSection.branch?.program?.dept_id;
 
   return masterClient.$transaction(async (tx) => {
     // Update student
     await tx.student.update({
       where: { id: student_id },
-      data: { section_id: new_section_id, course_id, program_id, dept_id },
+      data: { section_id: new_section_id, branch_id, program_id, dept_id },
     });
 
     // Update active enrollment's section
@@ -677,13 +702,14 @@ export const changeStudentSection = async (student_id, new_section_id) => {
 export const bulkChangeSection = async (student_ids, new_section_id) => {
   const newSection = await replicaClient.section.findUnique({
     where: { id: new_section_id },
-    include: { course: { include: { program: { include: { department: true } } } } },
+    include: { branch: { include: { program: { include: { department: true } } } } },
   });
   if (!newSection) { const e = new Error("Target section not found"); e.statusCode = 404; throw e; }
 
-  const course_id = newSection.course_id;
-  const program_id = newSection.course.program_id;
-  const dept_id = newSection.course.program.dept_id;
+  const branch_id = newSection.branch_id;
+  const course_id = branch_id; // legacy alias
+  const program_id = newSection.branch?.program_id;
+  const dept_id = newSection.branch?.program?.dept_id;
 
   const results = { success: [], failed: [], total: student_ids.length };
 
@@ -700,7 +726,7 @@ export const bulkChangeSection = async (student_ids, new_section_id) => {
       await masterClient.$transaction(async (tx) => {
         await tx.student.update({
           where: { id: student_id },
-          data: { section_id: new_section_id, course_id, program_id, dept_id },
+          data: { section_id: new_section_id, branch_id, program_id, dept_id },
         });
         if (student.enrollments[0]) {
           await tx.studentEnrollment.update({
@@ -724,47 +750,6 @@ export const bulkChangeSection = async (student_ids, new_section_id) => {
 // ═══════════════════════════════════════════════════════════════════════════════
 import xlsx from "xlsx";
 
-// ── Column definitions (shared between template and parser) ──────
-const STUDENT_COLS = [
-  { key: "email*", field: "email", required: true },
-  { key: "password", field: "password", required: false },
-  { key: "first_name*", field: "first_name", required: true },
-  { key: "last_name*", field: "last_name", required: true },
-  { key: "roll_number*", field: "roll_number", required: true },
-  { key: "enrollment_no", field: "enrollment_no", required: false },
-  { key: "group_no", field: "group_no", required: false },
-  { key: "contact_number*", field: "contact_number", required: true },
-  { key: "alt_contact_number", field: "alt_contact_number", required: false },
-  { key: "personal_email", field: "personal_email", required: false },
-  { key: "father_name*", field: "father_name", required: true },
-  { key: "mother_name*", field: "mother_name", required: true },
-  { key: "father_mobile", field: "father_mobile", required: false },
-  { key: "mother_mobile", field: "mother_mobile", required: false },
-  { key: "gender (MALE/FEMALE/OTHER)", field: "gender", required: false },
-  { key: "dob (YYYY-MM-DD)", field: "dob", required: false },
-  { key: "batch_year", field: "batch_year", required: false },
-  { key: "session", field: "session", required: false },
-  { key: "mode_of_admission", field: "mode_of_admission", required: false },
-  { key: "admission_year", field: "admission_year", required: false },
-  { key: "admission_date (YYYY-MM-DD)", field: "admission_date", required: false },
-  { key: "is_hosteller (true/false)", field: "is_hosteller", required: false },
-  { key: "is_using_transport (true/false)", field: "is_using_transport", required: false },
-  { key: "nick_name", field: "nick_name", required: false },
-  { key: "category", field: "category", required: false },
-  { key: "religion", field: "religion", required: false },
-  { key: "biometric_id", field: "biometric_id", required: false },
-  { key: "local_address", field: "local_address", required: false },
-  { key: "local_address_city", field: "local_address_city", required: false },
-  { key: "local_address_state", field: "local_address_state", required: false },
-  { key: "local_address_zipcode", field: "local_address_zipcode", required: false },
-  { key: "permanent_address", field: "permanent_address", required: false },
-  { key: "permanent_address_city", field: "permanent_address_city", required: false },
-  { key: "permanent_address_state", field: "permanent_address_state", required: false },
-  { key: "permanent_address_zipcode", field: "permanent_address_zipcode", required: false },
-  { key: "aadhar_no", field: "aadhar_no", required: false },
-  { key: "pan_no", field: "pan_no", required: false },
-];
-
 // Section-specific locked columns (not editable by user, pre-filled)
 const LOCKED_COLS = ["section_id", "academic_year*", "semester*", "section_name", "course", "program", "batch"];
 
@@ -773,8 +758,8 @@ const safeSheetName = (() => {
   const _used = new Set();
   return (s) => {
     // Format: "Program Course–Sec SemX" — consistent with subject/feedback templates
-    const prog = s.course?.program?.name || "";
-    const course = s.course?.name || "";
+    const prog = s.branch?.program?.name || "";
+    const course = s.branch?.name || "";
     const sem = s.semester ? `Sem${s.semester}` : "";
     const sec = s.name || "";
     let base = (`${prog} ${course}–${sec} ${sem}`).replace(/[\\/*?:[\]]/g, "").trim()
@@ -841,7 +826,7 @@ export const demoteStudent = async (id) => {
         student_id: student.id,
         section_id: student.section_id,
         dept_id: enrollment.dept_id,
-        course_id: enrollment.course_id,
+        branch_id: enrollment.branch_id,
         program_id: enrollment.program_id,
         academic_year: prevYear,
         semester: prevSem,
@@ -875,15 +860,15 @@ export const bulkDemoteStudents = async (ids) => {
 export const generateStudentTemplate = async () => {
   const sections = await prisma.section.findMany({
     select: {
-      id: true, name: true, semester: true, batch: true,
-      course: {
+      id: true, name: true, semester: true, batch: true, batch_year: true, academic_year: true,
+      branch: {
         select: {
-          name: true,
+          name: true, code: true,
           program: { select: { name: true, department: { select: { name: true } } } },
         },
       },
     },
-    orderBy: [{ course: { name: "asc" } }, { semester: "asc" }, { name: "asc" }],
+    orderBy: [{ branch: { name: "asc" } }, { semester: "asc" }, { name: "asc" }],
   });
 
   const wb = xlsx.utils.book_new();
@@ -896,10 +881,11 @@ export const generateStudentTemplate = async () => {
       "academic_year* (e.g. 2024-2025)",
       "semester*",
       "section_name",
-      "course",
+      "branch",
       "program",
       "department",
       "batch",
+      "group_no (G1/G2/G3 — optional)",
     ];
     const dataHeaders = STUDENT_COLS.map((c) => c.key);
     const allHeaders = [...lockedHeaders, ...dataHeaders];
@@ -911,13 +897,14 @@ export const generateStudentTemplate = async () => {
     })();
     const lockedValues = [
       sec.id,
-      year,
+      sec.academic_year || year,
       sec.semester,
       sec.name,
-      sec.course?.name || "",
-      sec.course?.program?.name || "",
-      sec.course?.program?.department?.name || "",
-      sec.batch || "",
+      sec.branch?.name || "",
+      sec.branch?.program?.name || "",
+      sec.branch?.program?.department?.name || "",
+      sec.batch || sec.batch_year || "",
+      "",  // group_no — blank for admin to fill
     ];
     const exampleValues = [
       "student@college.edu", "Student@123",
@@ -1080,7 +1067,7 @@ export const bulkCreateStudents = async (buffer) => {
         name: `${first_name} ${last_name}`,
         roll_number, section_id, academic_year, semester,
         enrollment_no: str(["enrollment_no"]),
-        group_no: str(["group_no"]),
+        group_no: str(["group_no", "group_no (G1/G2/G3 — optional)"]) || str(["group_no"]),
         contact_number,
         alt_contact_number: str(["alt_contact_number"]),
         personal_email: str(["personal_email"]),
@@ -1118,4 +1105,305 @@ export const bulkCreateStudents = async (buffer) => {
   }
 
   return results;
+};
+
+// ── Aliases — used by bulk.service.js ────────────────────────
+export const promoteSectionStudents = bulkPromoteSection;
+export const bulkStatusChangeBySection = async (section_id, status, reason, actingUser = {}) => {
+  const students = await prisma.student.findMany({
+    where: { section_id, deleted_at: null, status: "ACTIVE" },
+    select: { id: true },
+  });
+  const results = { updated: [], failed: [], total: students.length };
+  for (const s of students) {
+    try {
+      await changeStudentStatus(s.id, status, reason, actingUser);
+      results.updated.push(s.id);
+    } catch (e) { results.failed.push({ id: s.id, reason: e.message }); }
+  }
+  return results;
+};
+
+
+// ── changeStudentStatus — alias for status change ────────────
+export const changeStudentStatus = async (student_id, status, reason, actingUser = {}) => {
+  const VALID = ["ACTIVE", "DETAINED", "ON_HOLD", "LEFT", "TRANSFERRED", "SUSPENDED", "PASSED"];
+  if (!VALID.includes(status)) throw Object.assign(new Error(`Invalid status: ${status}`), { status: 400 });
+
+  const student = await prisma.student.findUnique({ where: { id: student_id }, select: { id: true, status: true, user_id: true } });
+  if (!student) throw Object.assign(new Error("Student not found"), { status: 404 });
+
+  const BLOCK_ON = new Set(["ON_HOLD", "LEFT", "TRANSFERRED", "SUSPENDED", "PASSED"]);
+  const UNBLOCK_ON = new Set(["ACTIVE", "DETAINED"]);
+
+  const updated = await prisma.student.update({ where: { id: student_id }, data: { status, ...(status === "PASSED" ? { is_alumni: true } : {}) } });
+
+  if (BLOCK_ON.has(status)) await prisma.user.update({ where: { id: student.user_id }, data: { isBlocked: true } }).catch(() => { });
+  if (UNBLOCK_ON.has(status)) await prisma.user.update({ where: { id: student.user_id }, data: { isBlocked: false } }).catch(() => { });
+
+  await prisma.studentEnrollment.updateMany({ where: { student_id, is_current: true }, data: { status } });
+
+  await prisma.studentHistory.create({
+    data: {
+      student_id,
+      action: "STATUS_CHANGE",
+      changed_fields: ["status"],
+      prev_data: { status: student.status },
+      new_data: { status, reason },
+      changed_by: actingUser.id || null,
+      changed_by_name: actingUser.email || null,
+    },
+  }).catch(() => { });
+
+  return updated;
+};
+// backend/modules/student/student.nosection.service.js
+// Add these functions to student.service.js
+// backend/modules/student/student.nosection.service.js
+// Add these functions to student.service.js
+
+// ── Column definitions (same as main service) ──────────────────
+const STUDENT_COLS = [
+  { key: "email*",                        field: "email",              required: true  },
+  { key: "password",                      field: "password",           required: false },
+  { key: "first_name*",                   field: "first_name",         required: true  },
+  { key: "last_name*",                    field: "last_name",          required: true  },
+  { key: "roll_number*",                  field: "roll_number",        required: true  },
+  { key: "enrollment_no",                 field: "enrollment_no",      required: false },
+  { key: "contact_number*",               field: "contact_number",     required: true  },
+  { key: "alt_contact_number",            field: "alt_contact_number", required: false },
+  { key: "personal_email",               field: "personal_email",     required: false },
+  { key: "father_name*",                  field: "father_name",        required: true  },
+  { key: "mother_name*",                  field: "mother_name",        required: true  },
+  { key: "father_mobile",                field: "father_mobile",      required: false },
+  { key: "mother_mobile",                field: "mother_mobile",      required: false },
+  { key: "gender (MALE/FEMALE/OTHER)",   field: "gender",             required: false },
+  { key: "dob (YYYY-MM-DD)",             field: "dob",                required: false },
+  { key: "batch_year",                   field: "batch_year",         required: false },
+  { key: "admission_year",               field: "admission_year",     required: false },
+  { key: "admission_date (YYYY-MM-DD)",  field: "admission_date",     required: false },
+  { key: "mode_of_admission",            field: "mode_of_admission",  required: false },
+  { key: "category",                     field: "category",           required: false },
+  { key: "religion",                     field: "religion",           required: false },
+  { key: "is_hosteller (true/false)",    field: "is_hosteller",       required: false },
+  { key: "is_using_transport (true/false)", field: "is_using_transport", required: false },
+  // Department/Program for reference (will be used to link if provided)
+  { key: "department_code",              field: "department_code",    required: false },
+  { key: "program_code",                 field: "program_code",       required: false },
+  // Address
+  { key: "local_address",               field: "local_address",      required: false },
+  { key: "local_address_city",          field: "local_address_city", required: false },
+  { key: "local_address_state",         field: "local_address_state",required: false },
+  { key: "permanent_address",           field: "permanent_address",  required: false },
+  { key: "aadhar_no",                   field: "aadhar_no",          required: false },
+  { key: "biometric_id",               field: "biometric_id",       required: false },
+  { key: "nick_name",                   field: "nick_name",          required: false },
+];
+
+// ── Template generator (no section) ───────────────────────────
+export const generateTemplateNoSection = () => {
+  const wb = xlsx.utils.book_new();
+  const headers = STUDENT_COLS.map(c => c.key);
+
+  const now    = new Date().getFullYear();
+  const year   = `${now}-${now + 1}`;
+
+  // Example row
+  const example = [
+    "student@college.edu", "Student@123",
+    "Aarav", "Sharma", "RN001",
+    "", "9876543210", "", "",
+    "Mr. Raj Sharma", "Mrs. Priya Sharma", "", "",
+    "MALE", "2006-05-15", now, now,
+    "", "Regular", "GENERAL", "HINDU",
+    "false", "false",
+    "CSE", "B.Tech",
+    "", "", "", "", "", "", "",
+  ];
+
+  const ws = xlsx.utils.aoa_to_sheet([headers, example]);
+
+  // Column widths
+  ws["!cols"] = headers.map(h => ({ wch: Math.max(h.length + 2, 18) }));
+  ws["!freeze"] = { xSplit: 0, ySplit: 1 };
+
+  xlsx.utils.book_append_sheet(wb, ws, "Students");
+
+  // Instructions sheet
+  const instructions = [
+    ["STUDENT BULK UPLOAD — NO SECTION — INSTRUCTIONS"],
+    [""],
+    ["USE CASE"],
+    ["  Use this template when you want to create student accounts WITHOUT section allocation."],
+    ["  Useful for: new admissions before section assignment, lateral entries, transfers, etc."],
+    [""],
+    ["STRUCTURE"],
+    ["  • Single sheet named 'Students'"],
+    ["  • Row 1: Column headers"],
+    ["  • Row 2: Example (delete before uploading or keep — it will be skipped)"],
+    ["  • Add student rows from row 3 onwards"],
+    [""],
+    ["REQUIRED COLUMNS (marked with *)"],
+    ["  email*, first_name*, last_name*, roll_number*, contact_number*, father_name*, mother_name*"],
+    [""],
+    ["OPTIONAL — USEFUL TO FILL"],
+    ["  department_code : e.g. CSE, ECE, ME — used to link student to dept (must match DB code exactly)"],
+    ["  program_code    : e.g. B.Tech, MCA — used to link student to program"],
+    ["  batch_year      : e.g. 2025"],
+    ["  gender          : MALE | FEMALE | OTHER"],
+    ["  dob / admission_date : YYYY-MM-DD"],
+    ["  category        : GENERAL | OBC | SC | ST | EWS"],
+    [""],
+    ["AFTER UPLOAD"],
+    ["  1. Students are created with status ACTIVE but no section or enrollment."],
+    ["  2. Go to Students → Change Section (or individual profile) to assign section."],
+    ["  3. Once section is assigned, enrollment record is auto-created."],
+    [""],
+    ["NOTES"],
+    ["  • Duplicate emails or roll numbers → reported as failure, not uploaded"],
+    ["  • Password defaults to 'Student@123' if left blank"],
+    [""],
+    [`Generated: ${new Date().toLocaleString("en-IN")}`],
+  ];
+
+  const wsI = xlsx.utils.aoa_to_sheet(instructions);
+  wsI["!cols"] = [{ wch: 80 }];
+  xlsx.utils.book_append_sheet(wb, wsI, "Instructions");
+
+  return xlsx.write(wb, { type: "buffer", bookType: "xlsx" });
+};
+
+// ── Bulk create without section ────────────────────────────────
+export const bulkCreateStudentsNoSection = async (buffer) => {
+  const wb = xlsx.read(buffer, { type: "buffer" });
+  const SKIP = new Set(["instructions", "readme", "ref"]);
+
+  const created = [], failed = [];
+  let rowIndex  = 2; // 1-based, row 2 onwards (row 1 = headers)
+
+  // Preload departments and programs for lookup
+  const [depts, programs] = await Promise.all([
+    prisma.department.findMany({ select: { id: true, code: true, name: true } }),
+    prisma.program.findMany({ select: { id: true, code: true, name: true } }),
+  ]);
+  const deptMap    = Object.fromEntries(depts.map(d => [d.code?.toLowerCase(), d.id]));
+  const programMap = Object.fromEntries(programs.map(p => [p.code?.toLowerCase(), p.id]));
+  // Also try by name
+  const deptNameMap    = Object.fromEntries(depts.map(d => [d.name?.toLowerCase(), d.id]));
+  const programNameMap = Object.fromEntries(programs.map(p => [p.name?.toLowerCase(), p.id]));
+
+  for (const sheetName of wb.SheetNames) {
+    if (SKIP.has(sheetName.toLowerCase())) continue;
+
+    const sheet = wb.Sheets[sheetName];
+    const rows  = xlsx.utils.sheet_to_json(sheet, { defval: "" });
+    if (!rows.length) continue;
+
+    for (const row of rows) {
+      rowIndex++;
+      const email = String(row["email*"] || row["email"] || "").trim().toLowerCase();
+
+      // Skip example row
+      if (!email || email === "student@college.edu") continue;
+
+      // Validate required fields
+      const missing = STUDENT_COLS.filter(c => c.required).map(c => {
+        const val = String(row[c.key] || row[c.field] || "").trim();
+        return !val ? c.field : null;
+      }).filter(Boolean);
+
+      if (missing.length) {
+        failed.push({ row: rowIndex, email, reason: `Missing required: ${missing.join(", ")}` });
+        continue;
+      }
+
+      const getRaw = (col) => {
+        const c = STUDENT_COLS.find(x => x.field === col);
+        return String(row[c?.key] || row[col] || "").trim();
+      };
+
+      try {
+        // Check for duplicate email
+        const existingUser = await prisma.user.findUnique({ where: { email } });
+        if (existingUser) { failed.push({ row: rowIndex, email, reason: "Email already exists" }); continue; }
+
+        // Check roll number
+        const rollNo = getRaw("roll_number");
+        const existingRoll = rollNo ? await prisma.student.findFirst({ where: { roll_no: rollNo } }) : null;
+        if (existingRoll) { failed.push({ row: rowIndex, email, reason: `Roll number ${rollNo} already exists` }); continue; }
+
+        const password = getRaw("password") || "Student@123";
+        const hashed   = await bcrypt.hash(password, 10);
+
+        // Resolve dept/program from codes
+        const deptCode    = getRaw("department_code")?.toLowerCase();
+        const programCode = getRaw("program_code")?.toLowerCase();
+        const dept_id     = deptCode    ? (deptMap[deptCode]    || deptNameMap[deptCode])       : undefined;
+        const programId   = programCode ? (programMap[programCode] || programNameMap[programCode]) : undefined;
+
+        // Create user
+        const user = await prisma.user.create({
+          data: {
+            email,
+            passwordHash: hashed,   // ← correct field name in schema
+            role:         "STUDENT",
+            must_change_password: true,
+          },
+        });
+
+        // Create student (NO section_id, NO enrollment)
+        // dept_id and program_id are REQUIRED in Student schema
+        // If not provided, find defaults from DB
+        const finalDeptId    = dept_id    || (await prisma.department.findFirst({ select:{ id:true }, orderBy:{ createdAt:"asc" } }))?.id;
+        const finalProgramId = programId  || (await prisma.program.findFirst({    select:{ id:true }, orderBy:{ createdAt:"asc" } }))?.id;
+
+        if (!finalDeptId)    { failed.push({ row: rowIndex, email, reason: "department_code not found in DB — fill department_code column" }); continue; }
+        if (!finalProgramId) { failed.push({ row: rowIndex, email, reason: "program_code not found in DB — fill program_code column" });    continue; }
+
+        const student = await prisma.student.create({
+          data: {
+            user_id:           user.id,
+            name:              `${getRaw("first_name")} ${getRaw("last_name")}`.trim(),
+            first_name:        getRaw("first_name"),
+            last_name:         getRaw("last_name")    || undefined,
+            roll_no:           rollNo                 || undefined,
+            enrollment_no:     getRaw("enrollment_no")|| undefined,
+            phone:             getRaw("contact_number")|| undefined,
+            alt_contact_number:getRaw("alt_contact_number") || undefined,
+            personal_email:    getRaw("personal_email")     || undefined,
+            father_name:       getRaw("father_name")  || undefined,
+            mother_name:       getRaw("mother_name")  || undefined,
+            father_phone:      getRaw("father_mobile")|| undefined,
+            mother_phone:      getRaw("mother_mobile")|| undefined,
+            gender:            (getRaw("gender") || "MALE").toUpperCase(),
+            dob:               getRaw("dob")           ? new Date(getRaw("dob"))           : undefined,
+            batch_year:        getRaw("batch_year")    ? parseInt(getRaw("batch_year"))    : undefined,
+            admission_year:    getRaw("admission_year")? parseInt(getRaw("admission_year")): undefined,
+            admission_date:    getRaw("admission_date")|| undefined,
+            mode_of_admission: getRaw("mode_of_admission") || undefined,
+            category:          getRaw("category")     || undefined,
+            religion:          getRaw("religion")     || undefined,
+            is_hosteller:      getRaw("is_hosteller") === "true",
+            is_using_transport:getRaw("is_using_transport") === "true",
+            nick_name:         getRaw("nick_name")    || undefined,
+            address:           getRaw("local_address")|| undefined,
+            city:              getRaw("local_address_city")  || undefined,
+            state:             getRaw("local_address_state") || undefined,
+            aadhar_no:         getRaw("aadhar_no")    || undefined,
+            biometric_id:      getRaw("biometric_id") || undefined,
+            dept_id:           finalDeptId,
+            program_id:        finalProgramId,
+            // section_id intentionally omitted — assign later
+            status:            "ACTIVE",
+          },
+        });
+
+        created.push({ student_id: student.id, email, roll_no: rollNo });
+      } catch (e) {
+        failed.push({ row: rowIndex, email, reason: e.message?.slice(0, 120) });
+      }
+    }
+  }
+
+  return { total: created.length + failed.length, created, failed };
 };
