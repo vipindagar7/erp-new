@@ -91,9 +91,7 @@ export async function getQuestionsTemplate(req, res) {
     const buffer = await feedbackService.getQuestionsTemplate();
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", 'attachment; filename="questions-template.xlsx"');
-    const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    res.setHeader("Content-Length", b.length);
-    res.end(b);
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -176,12 +174,12 @@ export async function getFormResults(req, res) {
 
 export async function exportFormResults(req, res) {
   try {
-    const buffer = await feedbackService.exportFormResults(req.params.id);
+    const result = await feedbackService.exportFormResults(req.params.id);
+    const buffer   = result?.buffer   ?? result;
+    const filename = result?.filename ?? `feedback-${req.params.id}.xlsx`;
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="feedback-${req.params.id}.xlsx"`);
-    const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    res.setHeader("Content-Length", b.length);
-    res.end(b);
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.end(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -192,9 +190,7 @@ export async function getFormTemplate(req, res) {
     const buffer = await feedbackService.getBulkSubmitTemplate(req.params.id);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="feedback-template-${req.params.id}.xlsx"`);
-    const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    res.setHeader("Content-Length", b.length);
-    res.end(b);
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -215,8 +211,7 @@ export async function submitFeedback(req, res) {
 
 export async function bulkSubmit(req, res) {
   try {
-    const isRoot = req.user?.is_root === true;
-    const result = await feedbackService.bulkSubmitFeedback(req.params.id, req.file?.buffer, isRoot);
+    const result = await feedbackService.bulkSubmitFeedback(req.params.id, req.file?.buffer);
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -276,9 +271,7 @@ export async function getGroupTemplate(req, res) {
     const buffer = await feedbackService.getGroupBulkTemplate(req.params.id);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="group-template-${req.params.id}.xlsx"`);
-    const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    res.setHeader("Content-Length", b.length);
-    res.end(b);
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -295,12 +288,10 @@ export async function bulkSubmitGroup(req, res) {
 
 export async function exportGroupResults(req, res) {
   try {
-    const buffer = await feedbackService.exportGroupResults(req.params.id);
+    const _gr = await feedbackService.exportGroupResults(req.params.id);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="group-results-${req.params.id}.xlsx"`);
-    const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    res.setHeader("Content-Length", b.length);
-    res.end(b);
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -320,12 +311,10 @@ export async function getTeachingReport(req, res) {
 export async function exportTeachingReport(req, res) {
   try {
     const { level, id } = req.params;
-    const buffer = await feedbackService.exportTeachingReport(level, id, req.query);
+    const _tr = await feedbackService.exportTeachingReport(level, id, req.query);
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
     res.setHeader("Content-Disposition", `attachment; filename="teaching-report-${level}-${id}.xlsx"`);
-    const b = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
-    res.setHeader("Content-Length", b.length);
-    res.end(b);
+    res.send(buffer);
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
