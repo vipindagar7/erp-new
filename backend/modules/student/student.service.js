@@ -749,6 +749,7 @@ export const bulkChangeSection = async (student_ids, new_section_id) => {
 // TEMPLATE + BULK UPLOAD
 // ═══════════════════════════════════════════════════════════════════════════════
 import xlsx from "xlsx";
+import { getCurrentSessionId } from "../session/session.service.js";
 
 // Section-specific locked columns (not editable by user, pre-filled)
 const LOCKED_COLS = ["section_id", "academic_year*", "semester*", "section_name", "course", "program", "batch"];
