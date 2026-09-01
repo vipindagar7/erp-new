@@ -48,7 +48,7 @@ const studentBase = z.object({
   password: z.string().min(6).optional().default("Student@123"),
   // Name
   first_name: z.string().min(1, "First name required"),
-  last_name: z.string().min(1, "Last name required"),
+  last_name: z.string().optional().nullable(),
   // Identity
   roll_number: z.string().min(1, "Roll number required"),
   enrollment_no: z.string().optional().nullable(),
