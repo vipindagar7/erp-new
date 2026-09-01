@@ -1039,7 +1039,6 @@ export const bulkCreateStudents = async (buffer) => {
 
     if (!email) { results.failed.push({ row: rowLabel, reason: "email required" }); continue; }
     if (!first_name) { results.failed.push({ row: rowLabel, reason: "first_name required" }); continue; }
-    if (!last_name) { results.failed.push({ row: rowLabel, reason: "last_name required" }); continue; }
     if (!roll_number) { results.failed.push({ row: rowLabel, reason: "roll_number required" }); continue; }
     if (!section_id) { results.failed.push({ row: rowLabel, reason: "section_id missing — check locked column" }); continue; }
     if (!academic_year) { results.failed.push({ row: rowLabel, reason: "academic_year missing" }); continue; }
