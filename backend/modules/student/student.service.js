@@ -1043,8 +1043,8 @@ export const bulkCreateStudents = async (buffer) => {
     if (!section_id) { results.failed.push({ row: rowLabel, reason: "section_id missing — check locked column" }); continue; }
     if (!academic_year) { results.failed.push({ row: rowLabel, reason: "academic_year missing" }); continue; }
     if (!contact_number) { results.failed.push({ row: rowLabel, reason: "contact_number required" }); continue; }
-    if (!father_name) { results.failed.push({ row: rowLabel, reason: "father_name required" }); continue; }
-    if (!mother_name) { results.failed.push({ row: rowLabel, reason: "mother_name required" }); continue; }
+    // if (!father_name) { results.failed.push({ row: rowLabel, reason: "father_name required" }); continue; }
+    // if (!mother_name) { results.failed.push({ row: rowLabel, reason: "mother_name required" }); continue; }
 
     const semester = parseInt(semester_raw);
     if (!semester || semester < 1 || semester > 8) {
