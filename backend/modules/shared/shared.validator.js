@@ -60,27 +60,61 @@ export const createSubjectSchema = z.object({
 export const updateSubjectSchema = createSubjectSchema.partial();
 
 // ── Section ─────────────────────────────────────────────────────
+// NOTE: the v3 section model uses branch_id (NOT course_id) — see
+// section.service.js createSection()/getAllSections(). Keeping course_id
+// here silently broke create AND made update() strip every field
+// the edit/promote UI actually sends (academic_year, session_id,
+// capacity, description, is_combined, code, batch_year, reason…)
+// because Zod drops unknown keys by default.
 export const sectionListSchema = pagination.extend({
-  course_id: z.string().uuid().optional(),
+  branch_id: z.string().uuid().optional(),
   program_id: z.string().uuid().optional(),
   dept_id: z.string().uuid().optional(),
-  semester: z.coerce.number().int().min(1).max(8).optional(),
-  status: z.string().optional(), // "all" returns all statuses
+  semester: z.coerce.number().int().min(1).max(12).optional(),
+  status: z.string().optional(), // "" / "all" returns all statuses
+  batch: z.string().optional(),
+  academic_year: z.string().optional(),
+  session_id: z.string().uuid().optional(),
 });
 // Backwards compat — old routes still import sectionPaginationSchema
 export const sectionPaginationSchema = sectionListSchema;
 
-const SECTION_STATUSES = ["ACTIVE", "COMPLETED", "ARCHIVED", "ALUMNI", "SUSPENDED"];
+const SECTION_STATUSES = ["ACTIVE", "INACTIVE", "MERGED", "DISCONTINUED", "GRADUATED", "COMPLETED", "ARCHIVED", "ALUMNI", "SUSPENDED"];
+
 export const createSectionSchema = z.object({
   name: z.string().min(1, "Name required"),
-  course_id: z.string().uuid("Valid course required"),
-  semester: z.coerce.number().int().min(1).max(8),
+  branch_id: z.string().uuid("Valid branch required"),
+  semester: z.coerce.number().int().min(1).max(12),
   batch: z.string().min(1, "Batch required"),
+  academic_year: z.string().optional(),
   room_no: z.string().optional(),
+  capacity: z.coerce.number().int().min(0).optional().nullable(),
   class_coordinator_id: z.string().uuid().optional().nullable(),
+  is_combined: z.coerce.boolean().optional(),
+  description: z.string().optional().nullable(),
   status: z.enum(SECTION_STATUSES).optional(),
 });
-export const updateSectionSchema = createSectionSchema.partial();
+
+// Update schema is its own object (not createSectionSchema.partial()) so we
+// can allow the extra fields the edit/promote/demote flows send that aren't
+// part of section creation — code, session_id, batch_year, reason.
+export const updateSectionSchema = z.object({
+  name: z.string().min(1).optional(),
+  code: z.string().optional(),
+  branch_id: z.string().uuid().optional(),
+  semester: z.coerce.number().int().min(1).max(12).optional(),
+  batch: z.string().optional(),
+  batch_year: z.coerce.number().int().optional().nullable(),
+  academic_year: z.string().optional().nullable(),
+  session_id: z.string().uuid().optional(), // picked from the session dropdown; backend resolves academic_year from it
+  room_no: z.string().optional().nullable(),
+  capacity: z.coerce.number().int().min(0).optional().nullable(),
+  class_coordinator_id: z.string().uuid().optional().nullable(),
+  is_combined: z.coerce.boolean().optional(),
+  description: z.string().optional().nullable(),
+  status: z.enum(SECTION_STATUSES).optional(),
+  reason: z.string().optional(),
+});
 
 // ── Section-Subject assignment ───────────────────────────────────
 const SUBJECT_TYPES = ["REGULAR", "ELECTIVE", "COMBINED", "TRAINING", "OTHER"];
@@ -109,13 +143,23 @@ export const bulkAssignSchema = z.object({
 });
 
 // ── Section promote / status / counts ───────────────────────────
+// NOTE: these are exported as pre-applied middleware below but section.routes.js
+// does NOT currently use validatePromote/validateMultiPromote — promote, demote,
+// bulk-promote and bulk-demote all read straight from req.body in the controller,
+// so to_session_id/reason are NOT at risk of being stripped there. Only the
+// PATCH /:id (update) route runs through validate(updateSectionSchema).
 const promoteSchema = z.object({
+  reason: z.string().optional(),
   remarks: z.string().optional(),
+  to_session_id: z.string().uuid().optional(),
+  new_academic_year: z.string().optional(),
 });
 
 const multiPromoteSchema = z.object({
   section_ids: z.array(z.string().uuid()).min(1, "At least one section required"),
+  reason: z.string().optional(),
   remarks: z.string().optional(),
+  to_session_id: z.string().uuid().optional(),
 });
 
 const statusSchema = z.object({

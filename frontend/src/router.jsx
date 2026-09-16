@@ -563,7 +563,8 @@ export const router = createBrowserRouter([
       { path: "feedback/questions", element: <FeedbackQuestionsPage /> },
 
       // ── Roles & Permissions ───────────────────────────
-      { path: "roles/permission-groups", element: <PermGuard rootOnly><PermissionManagerPage /></PermGuard> },
+      { path: "roles/permission-groups", element: <PermGuard superAdminOnly><PermissionManagerPage /></PermGuard> },
+      { path: "roles", element: <PermGuard superAdminOnly><PermissionManagerPage /></PermGuard> },
 
       // ── UI Permissions (root only) ────────────────────
       { path: "ui-permissions", element: <RootGuard><UIPermissionsPage /></RootGuard> },

@@ -73,7 +73,7 @@ const getCurrentSessionId = async () => {
 // ── List ──────────────────────────────────────────────────────
 export const getAllSections = async ({
   page = 1, limit = 20, search, branch_id, program_id,
-  dept_id, semester, status, academic_year,
+  dept_id, semester, status, academic_year, batch, session_id,
 } = {}) => {
   const _page = parseInt(page, 10) || 1;
   const _limit = parseInt(limit, 10) || 20;
@@ -82,7 +82,13 @@ export const getAllSections = async ({
   if (branch_id) where.branch_id = branch_id;
   if (semester) where.semester = parseInt(semester);
   if (status) where.status = status;
-  if (academic_year) where.academic_year = academic_year;
+  if (batch) where.batch = { contains: batch, mode: "insensitive" };
+  let _academicYear = academic_year;
+  if (session_id) {
+    const sess = await prisma.academicSession.findUnique({ where: { id: session_id } });
+    if (sess) _academicYear = sess.code || sess.name;
+  }
+  if (_academicYear) where.academic_year = _academicYear;
   if (program_id) where.branch = { program_id };
   if (dept_id) where.branch = { program: { dept_id } };
   if (search) where.OR = [
@@ -315,27 +321,113 @@ export const updateSection = async (id, data, actingUser = {}) => {
   const prev = await prisma.section.findUnique({ where: { id }, include: sectionInclude });
   if (!prev) throw Object.assign(new Error("Section not found"), { status: 404 });
 
+  // Resolve a session_id (dropdown selection) into an academic_year label,
+  // so callers can pass either `session_id` or a raw `academic_year` string.
+  let resolvedAcademicYear = data.academic_year;
+  let resolvedSessionId = data.session_id || undefined;
+  if (data.session_id) {
+    const sess = await prisma.academicSession.findUnique({ where: { id: data.session_id } });
+    if (!sess) throw Object.assign(new Error("Selected session not found"), { status: 400 });
+    resolvedAcademicYear = sess.code || sess.name || resolvedAcademicYear;
+  }
+
+  const newSemester = data.semester !== undefined ? parseInt(data.semester) : undefined;
+  const semesterChanged = newSemester !== undefined && newSemester !== prev.semester;
+
   const next = await prisma.section.update({
     where: { id },
     data: {
       ...(data.name !== undefined && { name: data.name.trim() }),
+      ...(data.code !== undefined && { code: data.code.trim() }),
+      ...(data.batch !== undefined && { batch: data.batch || null }),
+      ...(data.batch_year !== undefined && { batch_year: data.batch_year ? parseInt(data.batch_year) : null }),
+      ...(data.branch_id !== undefined && { branch_id: data.branch_id }),
       ...(data.class_coordinator_id !== undefined && { class_coordinator_id: data.class_coordinator_id || null }),
       ...(data.room_no !== undefined && { room_no: data.room_no || null }),
       ...(data.capacity !== undefined && { capacity: data.capacity ? parseInt(data.capacity) : null }),
       ...(data.description !== undefined && { description: data.description || null }),
       ...(data.is_combined !== undefined && { is_combined: !!data.is_combined }),
       ...(data.status !== undefined && { status: data.status }),
+      ...(newSemester !== undefined && { semester: newSemester }),
+      ...(resolvedAcademicYear !== undefined && { academic_year: resolvedAcademicYear }),
     },
     include: sectionInclude,
   });
 
-  const sid = await getCurrentSessionId().catch(() => "DEFAULT");
+  const sid = resolvedSessionId || await getCurrentSessionId().catch(() => "DEFAULT");
+
+  // If the semester (or its session/academic year) changed via edit,
+  // cascade the change onto every currently-enrolled student in this section
+  // so the section and its students never drift out of sync.
+  let students_updated = 0;
+  if (semesterChanged || (resolvedAcademicYear && resolvedAcademicYear !== prev.academic_year)) {
+    const r = await prisma.studentEnrollment.updateMany({
+      where: { section_id: id, is_current: true },
+      data: {
+        ...(newSemester !== undefined && { semester: newSemester }),
+        ...(resolvedAcademicYear !== undefined && { academic_year: resolvedAcademicYear }),
+        ...(resolvedSessionId && { session_id: resolvedSessionId }),
+      },
+    });
+    students_updated = r.count;
+
+    if (semesterChanged) {
+      const students = await prisma.student.findMany({
+        where: { section_id: id, deleted_at: null },
+        select: { id: true },
+      });
+      for (const s of students) {
+        await logEnrollmentHistory(s.id, {
+          action: newSemester > prev.semester ? "PROMOTE" : "DEMOTE",
+          section_id: id,
+          from_semester: prev.semester,
+          to_semester: newSemester,
+          from_session: prev.academic_year,
+          to_session: resolvedAcademicYear,
+          reason: data.reason || "Updated via section edit",
+          by: actingUser.id, byName: actingUser.email, byRole: actingUser.role,
+        });
+      }
+    }
+  }
+
   await logSectionHistory(id, sid, {
     action: "UPDATE", prev, next, reason: data.reason,
     by: actingUser.id, byName: actingUser.email, byRole: actingUser.role,
   });
 
-  return next;
+  return { ...next, students_updated };
+};
+
+// ─────────────────────────────────────────────────────────────
+// BULK UPDATE SECTIONS — apply the same field(s) to many sections
+// e.g. { batch: "2024-2028", session_id: "...", room_no: "101" }
+// Only keys present in `fields` are applied — same allowlist as
+// updateSection(), so it stays consistent with the single-edit path.
+// ─────────────────────────────────────────────────────────────
+export const bulkUpdateSections = async (section_ids, fields, actingUser = {}) => {
+  const results = {
+    sections: { updated: [], failed: [], skipped: [] },
+    students_updated: 0,
+    total_sections: section_ids.length,
+  };
+
+  const { reason, ...data } = fields || {};
+
+  for (const section_id of section_ids) {
+    try {
+      const exists = await prisma.section.findUnique({ where: { id: section_id }, select: { id: true, name: true, code: true } });
+      if (!exists) { results.sections.skipped.push({ id: section_id, reason: "Not found" }); continue; }
+
+      const updated = await updateSection(section_id, { ...data, reason }, actingUser);
+      results.students_updated += updated.students_updated || 0;
+      results.sections.updated.push({ id: section_id, name: exists.name, code: exists.code });
+    } catch (err) {
+      results.sections.failed.push({ id: section_id, reason: err.message });
+    }
+  }
+
+  return results;
 };
 
 // ══════════════════════════════════════════════════════════════
@@ -947,6 +1039,13 @@ const getSessionId = async () => {
   return s?.id || null;
 };
 
+// ── List all academic sessions (for the session dropdown in the UI) ──
+export const getAllAcademicSessions = async () => {
+  return prisma.academicSession.findMany({
+    orderBy: { start_date: "desc" },
+  });
+};
+
 // Session changes when moving from even sem to odd sem
 // Sem 1→2 same, Sem 2→3 NEW session, Sem 3→4 same, Sem 4→5 NEW...
 const sessionChangesOnPromote = (currentSem) => currentSem % 2 === 0;
@@ -993,13 +1092,17 @@ const getOrCreateSession = async (label) => {
 // BULK PROMOTE SECTIONS
 // sections: [{ id, current_semester, current_session_label }]
 // ─────────────────────────────────────────────────────────────
-export const bulkPromoteSections = async (section_ids, reason, actingUser = {}) => {
+export const bulkPromoteSections = async (section_ids, reason, actingUser = {}, to_session_id = null) => {
   const results = {
     sections: { promoted: [], failed: [], skipped: [] },
     students: { promoted: 0, skipped: 0, failed: 0 },
     snapshots: [],
     total_sections: section_ids.length,
   };
+
+  // If the admin explicitly picked a target session from the dropdown,
+  // resolve it once and use it for every section — overriding auto-detection.
+  const overrideSession = to_session_id ? await prisma.academicSession.findUnique({ where: { id: to_session_id } }) : null;
 
   for (const section_id of section_ids) {
     try {
@@ -1018,12 +1121,12 @@ export const bulkPromoteSections = async (section_ids, reason, actingUser = {}) 
       const currentSession = await prisma.academicSession.findFirst({ where: { is_current: true } });
       const currentLabel = currentSession?.code || section.academic_year;
 
-      // Determine new session
-      const sessionChanges = sessionChangesOnPromote(currentSem);
-      const newSessionLabel = sessionChanges ? nextSessionLabel(currentLabel) : currentLabel;
-      const newSessionId = sessionChanges
-        ? await getOrCreateSession(newSessionLabel)
-        : (currentSession?.id || null);
+      // Determine new session — explicit dropdown selection wins, otherwise auto-detect
+      const sessionChanges = overrideSession ? overrideSession.id !== currentSession?.id : sessionChangesOnPromote(currentSem);
+      const newSessionLabel = overrideSession ? (overrideSession.code || overrideSession.name) : (sessionChanges ? nextSessionLabel(currentLabel) : currentLabel);
+      const newSessionId = overrideSession
+        ? overrideSession.id
+        : (sessionChanges ? await getOrCreateSession(newSessionLabel) : (currentSession?.id || null));
 
       // 1. Snapshot
       const snapshot = await createSectionSnapshot(section_id, "PROMOTE", actingUser, reason);
@@ -1137,12 +1240,14 @@ export const bulkPromoteSections = async (section_ids, reason, actingUser = {}) 
 // ─────────────────────────────────────────────────────────────
 // BULK DEMOTE SECTIONS
 // ─────────────────────────────────────────────────────────────
-export const bulkDemoteSections = async (section_ids, reason, actingUser = {}) => {
+export const bulkDemoteSections = async (section_ids, reason, actingUser = {}, to_session_id = null) => {
   const results = {
     sections: { demoted: [], failed: [], skipped: [] },
     students: { demoted: 0, failed: 0 },
     total_sections: section_ids.length,
   };
+
+  const overrideSession = to_session_id ? await prisma.academicSession.findUnique({ where: { id: to_session_id } }) : null;
 
   for (const section_id of section_ids) {
     try {
@@ -1154,8 +1259,8 @@ export const bulkDemoteSections = async (section_ids, reason, actingUser = {}) =
       const newSem = currentSem - 1;
       const currentSession = await prisma.academicSession.findFirst({ where: { is_current: true } });
       const currentLabel = currentSession?.code || section.academic_year;
-      const sessionChanges = sessionChangesOnDemote(currentSem);
-      const newSessionLabel = sessionChanges ? prevSessionLabel(currentLabel) : currentLabel;
+      const sessionChanges = overrideSession ? overrideSession.id !== currentSession?.id : sessionChangesOnDemote(currentSem);
+      const newSessionLabel = overrideSession ? (overrideSession.code || overrideSession.name) : (sessionChanges ? prevSessionLabel(currentLabel) : currentLabel);
 
       const snapshot = await createSectionSnapshot(section_id, "DEMOTE", actingUser, reason);
 

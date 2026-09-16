@@ -11,14 +11,21 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { cn } from "../../lib/utils.js";
 
 // ── Permission check ───────────────────────────────────────────
+const FACULTY_DEFAULT_PERMS = new Set([
+  "timetable.view", "attendance.manage", "leave.apply", "leave.view",
+  "assignments.view", "assignments.create", "feedback.view",
+]);
+
 const canSeeItem = (item, user) => {
   if (!user) return false;
   if (item.type === "divider") return true;
   if (item.superOnly) return user.role === "SUPER_ADMIN";
-  if (item.rootOnly)  return user.is_root === true || user.role === "SUPER_ADMIN";
+  if (item.rootOnly) return user.is_root === true || user.role === "SUPER_ADMIN";
   if (!item.permission) return true;
   if (user.role === "SUPER_ADMIN") return true;
   const perms = user.effectivePermissions || user.permissions || [];
+  // Faculty always gets basic nav items
+  if (user.role === "FACULTY" && FACULTY_DEFAULT_PERMS.has(item.permission)) return true;
   return perms.includes(item.permission);
 };
 
@@ -27,11 +34,11 @@ function Logo({ collapsed }) {
   return (
     <div className="flex items-center px-4 py-5 border-b border-sidebar-border h-[65px] shrink-0">
       {collapsed
-        ? <img src="/favicon.ico" alt="EIT" className="w-8 h-8 object-contain"/>
+        ? <img src="/favicon.ico" alt="EIT" className="w-8 h-8 object-contain" />
         : (
           <>
-            <img src="/Black-Logo.webp" alt="EIT ERP" className="w-52 object-contain block dark:hidden"/>
-            <img src="/White-Logo.webp" alt="EIT ERP" className="w-52 object-contain hidden dark:block"/>
+            <img src="/Black-Logo.webp" alt="EIT ERP" className="w-52 object-contain block dark:hidden" />
+            <img src="/White-Logo.webp" alt="EIT ERP" className="w-52 object-contain hidden dark:block" />
           </>
         )
       }
@@ -52,7 +59,7 @@ function NavItem({ item, collapsed }) {
       "flex items-center gap-3 mx-2 px-3 py-2.5 rounded-xl text-sm opacity-40 cursor-not-allowed select-none",
       collapsed && "justify-center px-2"
     )}>
-      <Icon size={17} className="shrink-0 text-sidebar-icon"/>
+      <Icon size={17} className="shrink-0 text-sidebar-icon" />
       {!collapsed && (
         <>
           <span className="flex-1 whitespace-nowrap overflow-hidden text-sidebar-muted">{item.label}</span>
@@ -69,14 +76,14 @@ function NavItem({ item, collapsed }) {
         collapsed && "justify-center px-2"
       )}>
       {isActive && !collapsed && (
-        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-violet-500"/>
+        <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full bg-violet-500" />
       )}
       <Icon size={17} className={cn(
         "shrink-0 transition-colors",
         isActive ? "text-violet-500 dark:text-violet-400" : "text-sidebar-icon group-hover:text-sidebar-foreground"
-      )}/>
+      )} />
       {!collapsed && <span className="whitespace-nowrap overflow-hidden">{item.label}</span>}
-      {isActive && collapsed && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-violet-500"/>}
+      {isActive && collapsed && <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-violet-500" />}
     </NavLink>
   );
 
@@ -97,7 +104,7 @@ function NavItem({ item, collapsed }) {
 
 // ── Divider ────────────────────────────────────────────────────
 function Divider({ item, collapsed }) {
-  if (collapsed) return <div className="mx-3 my-1.5"><div className="h-px bg-sidebar-border"/></div>;
+  if (collapsed) return <div className="mx-3 my-1.5"><div className="h-px bg-sidebar-border" /></div>;
   return (
     <div className="mx-4 mt-4 mb-1">
       {item.label && (
@@ -121,9 +128,9 @@ function NavSection({ section, collapsed }) {
     return (
       <div>
         <div className="space-y-0.5">
-          {section.items.map(item => <NavItem key={item.key} item={item} collapsed/>)}
+          {section.items.map(item => <NavItem key={item.key} item={item} collapsed />)}
         </div>
-        <div className="mx-3 my-1.5"><div className="h-px bg-sidebar-border"/></div>
+        <div className="mx-3 my-1.5"><div className="h-px bg-sidebar-border" /></div>
       </div>
     );
   }
@@ -138,15 +145,15 @@ function NavSection({ section, collapsed }) {
         )}>
         <div className="flex items-center gap-2">
           {SectionIcon && (
-            <SectionIcon size={12} className={cn(hasActive ? "text-violet-500 dark:text-violet-400" : "text-sidebar-muted")}/>
+            <SectionIcon size={12} className={cn(hasActive ? "text-violet-500 dark:text-violet-400" : "text-sidebar-muted")} />
           )}
           <span>{section.label}</span>
         </div>
-        <ChevronDown size={12} className={cn("transition-transform duration-200", open ? "rotate-180" : "")}/>
+        <ChevronDown size={12} className={cn("transition-transform duration-200", open ? "rotate-180" : "")} />
       </button>
       <div className={cn("overflow-hidden transition-all duration-200", open ? "max-h-screen opacity-100" : "max-h-0 opacity-0 pointer-events-none")}>
         <div className="space-y-0.5 pb-1">
-          {section.items.map(item => <NavItem key={item.key} item={item} collapsed={false}/>)}
+          {section.items.map(item => <NavItem key={item.key} item={item} collapsed={false} />)}
         </div>
       </div>
     </div>
@@ -158,8 +165,8 @@ function FlatNav({ items, collapsed, user }) {
   return (
     <div className="space-y-0.5 py-2">
       {items.filter(item => canSeeItem(item, user)).map(item => {
-        if (item.type === "divider") return <Divider key={item.key} item={item} collapsed={collapsed}/>;
-        return <NavItem key={item.key} item={item} collapsed={collapsed}/>;
+        if (item.type === "divider") return <Divider key={item.key} item={item} collapsed={collapsed} />;
+        return <NavItem key={item.key} item={item} collapsed={collapsed} />;
       })}
     </div>
   );
@@ -168,10 +175,10 @@ function FlatNav({ items, collapsed, user }) {
 // ── Main Sidebar export ────────────────────────────────────────
 export function Sidebar({ navItems = [], moduleNavItems = null, moduleName = "" }) {
   const { collapsed, toggle } = useSidebar();
-  const { user }              = useSelector(s => s.auth);
+  const { user } = useSelector(s => s.auth);
   const { mode, toggle: toggleMode } = useSidebarMode();
 
-  const hasModuleNav  = moduleNavItems && moduleNavItems.length > 0;
+  const hasModuleNav = moduleNavItems && moduleNavItems.length > 0;
   const showingModule = hasModuleNav && mode === SIDEBAR_MODE.MODULE;
 
   // Build grouped sections, filtering by effectivePermissions
@@ -185,7 +192,7 @@ export function Sidebar({ navItems = [], moduleNavItems = null, moduleName = "" 
     }
     // Flat array with group markers
     const result = [];
-    let current  = null;
+    let current = null;
     for (const item of navItems) {
       if (item.group) {
         current = { label: item.group, icon: item.groupIcon || null, items: [] };
@@ -204,7 +211,7 @@ export function Sidebar({ navItems = [], moduleNavItems = null, moduleName = "" 
       "bg-sidebar border-r border-sidebar-border",
       collapsed ? "w-[68px]" : "w-[240px]"
     )}>
-      <Logo collapsed={collapsed}/>
+      <Logo collapsed={collapsed} />
 
       {hasModuleNav && (
         <SidebarModeToggle
@@ -217,10 +224,10 @@ export function Sidebar({ navItems = [], moduleNavItems = null, moduleName = "" 
 
       <nav className="flex-1 overflow-y-auto overflow-x-hidden py-3 scrollbar-thin">
         {showingModule
-          ? <FlatNav items={moduleNavItems || []} collapsed={collapsed} user={user}/>
+          ? <FlatNav items={moduleNavItems || []} collapsed={collapsed} user={user} />
           : sections.map((section, i) => (
-              <NavSection key={section.label || i} section={section} collapsed={collapsed}/>
-            ))
+            <NavSection key={section.label || i} section={section} collapsed={collapsed} />
+          ))
         }
       </nav>
 
@@ -242,7 +249,7 @@ export function Sidebar({ navItems = [], moduleNavItems = null, moduleName = "" 
       <div className={cn("p-3 border-t border-sidebar-border", collapsed ? "flex justify-center" : "flex justify-end")}>
         <button onClick={toggle}
           className="flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 text-sidebar-muted hover:text-sidebar-foreground hover:bg-sidebar-hover">
-          {collapsed ? <PanelLeftOpen size={16}/> : <PanelLeftClose size={16}/>}
+          {collapsed ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
         </button>
       </div>
     </aside>

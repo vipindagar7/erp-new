@@ -174,6 +174,7 @@ export const createStudent = async (data) => {
     nick_name, category, religion, group_no, batch_year,
   } = data;
 
+
   // Auto-derive dept/course/program from section
   const section = await replicaClient.section.findUnique({
     where: { id: section_id },

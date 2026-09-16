@@ -143,7 +143,7 @@ function GroupModal({ group, allPerms, onClose, onSaved }) {
   useEffect(() => {
     Promise.all([
       axiosInstance.get(EP.departments.list + "?limit=100"),
-      axiosInstance.get(EP.programs?.list || "/api/programs?limit=100"),
+      axiosInstance.get(EP.programs?.list || "/programs?limit=100"),
     ]).then(([dRes, pRes]) => {
       setScopeDepts(dRes.data?.data?.departments || dRes.data?.data || []);
       setScopePrograms(pRes.data?.data?.programs || pRes.data?.data || []);
@@ -156,10 +156,10 @@ function GroupModal({ group, allPerms, onClose, onSaved }) {
     setSaving(true);
     try {
       if (group) {
-        await axiosInstance.patch(`/api/permissions/groups/${group.id}`, form);
+        await axiosInstance.patch(`/permissions/groups/${group.id}`, form);
         notify.success("Group updated");
       } else {
-        await axiosInstance.post("/api/permissions/groups", form);
+        await axiosInstance.post("/permissions/groups", form);
         notify.success("Group created");
       }
       onSaved();
@@ -247,7 +247,7 @@ function UserEditor({ allPerms, groups, onClose }) {
     if (!query.trim()) return;
     setLoading(true);
     try {
-      const res = await axiosInstance.get(`/api/permissions/search-users?q=${query}`);
+      const res = await axiosInstance.get(`/permissions/search-users?q=${query}`);
       setUsers(res.data?.data || []);
     } catch { notify.error("Search failed"); }
     finally { setLoading(false); }
@@ -258,7 +258,7 @@ function UserEditor({ allPerms, groups, onClose }) {
     setLoading2(true);
     try {
       const [permRes, deptRes] = await Promise.all([
-        axiosInstance.get(`/api/permissions/user/${user.id}`),
+        axiosInstance.get(`/permissions/user/${user.id}`),
         axiosInstance.get(EP.departments.list + "?limit=100").catch(() => ({ data: { data: [] } })),
       ]);
       const s = permRes.data?.data;
@@ -276,7 +276,7 @@ function UserEditor({ allPerms, groups, onClose }) {
     setSaving(true);
     try {
       // 1. Save own permissions
-      await axiosInstance.post(`/api/permissions/user/${selected.id}`, { permissions: ownPerms });
+      await axiosInstance.post(`/permissions/user/${selected.id}`, { permissions: ownPerms });
 
       // 2. Compute group changes
       const was = summary.groups.map(g => g.id);
@@ -284,10 +284,10 @@ function UserEditor({ allPerms, groups, onClose }) {
       const toRem = was.filter(id => !assignedGroups.includes(id));
 
       if (toAdd.length) {
-        await axiosInstance.post("/api/permissions/groups/assign", { user_id: selected.id, group_ids: toAdd });
+        await axiosInstance.post("/permissions/groups/assign", { user_id: selected.id, group_ids: toAdd });
       }
       for (const gid of toRem) {
-        await axiosInstance.delete(`/api/permissions/groups/assign/${selected.id}/${gid}`);
+        await axiosInstance.delete(`/permissions/groups/assign/${selected.id}/${gid}`);
       }
 
       notify.success(`Permissions saved for ${summary.name || summary.email}`);
@@ -479,8 +479,8 @@ export default function PermissionManagerPage() {
   const load = () => {
     setLoading(true);
     Promise.all([
-      axiosInstance.get("/api/permissions/groups"),
-      axiosInstance.get("/api/permissions/available"),
+      axiosInstance.get("/permissions/groups"),
+      axiosInstance.get("/permissions/available"),
     ]).then(([gRes, pRes]) => {
       setGroups(gRes.data?.data || []);
       setAllPerms(pRes.data?.data || []);
@@ -494,7 +494,7 @@ export default function PermissionManagerPage() {
     if (!confirm(`Delete "${g.name}"?`)) return;
     setDeleting(g.id);
     try {
-      await axiosInstance.delete(`/api/permissions/groups/${g.id}`);
+      await axiosInstance.delete(`/permissions/groups/${g.id}`);
       notify.success("Deleted");
       load();
     } catch (e) { notify.error(e.response?.data?.message || "Failed"); }

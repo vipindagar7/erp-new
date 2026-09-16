@@ -25,9 +25,9 @@ export const restore = async (req, res, next) => {
 export const assignSubjectToSection = async (req, res, next) => {
   try {
     const { subject_id, faculty_id, type, status } = req.validatedData ?? req.body;
-    
+
     console.log(req.params.id)
-     
+
     const r = await svc.assignSubjectToSection(req.params.id, subject_id, faculty_id || null, type, status);
     ok(res, r, "Subject assigned");
   } catch (e) { fail(res, e, next); }
@@ -153,8 +153,9 @@ export const promoteStudent  = async (req, res, next) => { try { ok(res, await s
 export const rollback        = async (req, res, next) => { try { ok(res, await svc.rollbackSection(req.params.id, req.params.snap_id, req.body.reason, req.user), "Rolled back"); } catch(e) { fail(res,e,next); } };
 
 // Bulk promote/demote/graduate
-export const bulkPromote     = async (req, res, next) => { try { const { section_ids, reason } = req.body; if (!section_ids?.length) return res.status(400).json({success:false,message:"section_ids required"}); ok(res, await svc.bulkPromoteSections(section_ids, reason, req.user), "Sections promoted"); } catch(e) { fail(res,e,next); } };
-export const bulkDemote      = async (req, res, next) => { try { const { section_ids, reason } = req.body; if (!section_ids?.length) return res.status(400).json({success:false,message:"section_ids required"}); ok(res, await svc.bulkDemoteSections(section_ids, reason, req.user), "Sections demoted");  } catch(e) { fail(res,e,next); } };
+export const bulkUpdate      = async (req, res, next) => { try { const { section_ids, reason, ...fields } = req.body; if (!section_ids?.length) return res.status(400).json({success:false,message:"section_ids required"}); ok(res, await svc.bulkUpdateSections(section_ids, { ...fields, reason }, req.user), "Sections updated"); } catch(e) { fail(res,e,next); } };
+export const bulkPromote     = async (req, res, next) => { try { const { section_ids, reason, to_session_id } = req.body; if (!section_ids?.length) return res.status(400).json({success:false,message:"section_ids required"}); ok(res, await svc.bulkPromoteSections(section_ids, reason, req.user, to_session_id || null), "Sections promoted"); } catch(e) { fail(res,e,next); } };
+export const bulkDemote      = async (req, res, next) => { try { const { section_ids, reason, to_session_id } = req.body; if (!section_ids?.length) return res.status(400).json({success:false,message:"section_ids required"}); ok(res, await svc.bulkDemoteSections(section_ids, reason, req.user, to_session_id || null), "Sections demoted");  } catch(e) { fail(res,e,next); } };
 export const graduate        = async (req, res, next) => { try { const { section_ids, reason } = req.body; if (!section_ids?.length) return res.status(400).json({success:false,message:"section_ids required"}); ok(res, await svc.graduateSections(section_ids, reason, req.user), "Sections graduated"); } catch(e) { fail(res,e,next); } };
 
 // Student status bulk
@@ -230,4 +231,10 @@ export const deactivate = async (req, res, next) => {
   try {
     ok(res, await svc.updateSection(req.params.id, { status: "INACTIVE" }, req.user), "Section deactivated");
   } catch(e) { fail(res,e,next); }
+};
+
+// ── Academic sessions (for the promote/demote/edit session dropdown) ──
+export const getSessions = async (req, res, next) => {
+  try { ok(res, await svc.getAllAcademicSessions()); }
+  catch(e) { fail(res,e,next); }
 };

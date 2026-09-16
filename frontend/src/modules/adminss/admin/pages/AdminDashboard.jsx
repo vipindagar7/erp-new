@@ -88,15 +88,26 @@ export default function AdminDashboard() {
 
   const isSuperAdmin = user?.role === "SUPER_ADMIN";
   const isRoot = user?.is_root === true || isSuperAdmin;
-  const isTeaching = user?.is_teaching === true;
+  const isTeaching = user?.faculty?.is_teaching !== false; // default true for faculty
   const perms = user?.effectivePermissions || user?.permissions || [];
+  // FACULTY role always gets basic self-service modules
+  const isFaculty = user?.role === "FACULTY";
 
   // Filter modules by permission
+  // Faculty default perms even without explicit assignment
+  const FACULTY_DEFAULT_PERMS = [
+    "timetable.view", "attendance.manage", "leave.apply", "leave.view",
+    "assignments.view", "assignments.create", "feedback.view",
+  ];
+  const effectivePerms = isFaculty
+    ? [...new Set([...perms, ...FACULTY_DEFAULT_PERMS])]
+    : perms;
+
   const canSee = (mod) => {
     if (mod.rootOnly) return isRoot;
     if (!mod.perm) return true;
     if (isSuperAdmin) return true;
-    return perms.includes(mod.perm);
+    return effectivePerms.includes(mod.perm);
   };
 
   const visibleModules = MODULES.filter(canSee);

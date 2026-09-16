@@ -14,7 +14,9 @@ const upload = multer({ storage: multer.memoryStorage() });
 // STATIC ROUTES — all before /:id
 // ═══════════════════════════════════════════════════════════════
 router.get( "/template",                authenticate,                          c.sectionTemplate);
+router.get( "/sessions",                authenticate,                          c.getSessions);
 router.post("/bulk-upload",             authenticate, requirePerm("section:create"),  upload.single("file"), c.sectionBulkUpload);
+router.post("/bulk-update",             authenticate, requirePerm("section:update"),   c.bulkUpdate);
 router.post("/bulk-promote",            authenticate, requirePerm("section:promote"), c.bulkPromote);
 router.post("/bulk-demote",             authenticate, superAdminOnly,                 c.bulkDemote);
 router.post("/graduate",                authenticate, superAdminOnly,                 c.graduate);

@@ -19,6 +19,14 @@ export default function SectionEditPage() {
     const [form, setForm] = useState({});
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
+    const [sessions, setSessions] = useState([]);
+    const [sessionId, setSessionId] = useState(""); // "" = keep current session/academic_year as-is
+
+    useEffect(() => {
+        axiosInstance.get(EP.sections.sessions || "/sections/sessions")
+            .then(r => setSessions(r.data?.data || []))
+            .catch(() => {});
+    }, []);
 
     useEffect(() => {
         axiosInstance.get(EP.sections.byId(id)).then(r => {
@@ -44,15 +52,23 @@ export default function SectionEditPage() {
 
     const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }));
 
+    // +1 / -1 semester shortcut — clamps to 1..12, doesn't save until "Save Changes"
+    const bumpSemester = (delta) => setForm(f => {
+        const next = Math.min(12, Math.max(1, parseInt(f.semester || 1) + delta));
+        return { ...f, semester: next };
+    });
+
     const save = async () => {
         if (!form.name?.trim()) { notify.error("Section name required"); return; }
         setSaving(true);
         try {
-            await axiosInstance.patch(EP.sections.update(id), {
+            const r = await axiosInstance.patch(EP.sections.update(id), {
                 name: form.name.trim(),
                 code: form.code.trim(),
                 semester: parseInt(form.semester),
-                academic_year: form.academic_year || null,
+                // If a session was picked from the dropdown, send its id (backend resolves
+                // the academic_year label from it); otherwise fall back to the free-text field.
+                ...(sessionId ? { session_id: sessionId } : { academic_year: form.academic_year || null }),
                 batch: form.batch || null,
                 batch_year: form.batch_year ? parseInt(form.batch_year) : null,
                 status: form.status,
@@ -61,7 +77,8 @@ export default function SectionEditPage() {
                 description: form.description || null,
                 class_coordinator_id: form.class_coordinator_id || null,
             });
-            notify.success("Section updated");
+            const studentsUpdated = r.data?.data?.students_updated || 0;
+            notify.success(studentsUpdated > 0 ? `Section updated — ${studentsUpdated} student(s) synced` : "Section updated");
             navigate(`/admin/sections/${id}`);
         } catch (err) { notify.error(err); }
         finally { setSaving(false); }
@@ -103,8 +120,14 @@ export default function SectionEditPage() {
                             <input className={inp} value={form.code} onChange={set("code")} placeholder="CSE-A-4-2024" />
                         </div>
                         <div className="space-y-1.5">
-                            <Label className="text-xs">Semester</Label>
-                            <input className={inp} type="number" min={1} max={12} value={form.semester} onChange={set("semester")} />
+                            <Label className="text-xs">Semester <span className="text-muted-foreground font-normal">(+1 / -1 shortcuts)</span></Label>
+                            <div className="flex items-center gap-1.5">
+                                <button type="button" onClick={() => bumpSemester(-1)}
+                                    className="h-10 w-10 shrink-0 rounded-lg border border-input hover:bg-muted text-sm font-semibold">−1</button>
+                                <input className={inp + " text-center"} type="number" min={1} max={12} value={form.semester} onChange={set("semester")} />
+                                <button type="button" onClick={() => bumpSemester(1)}
+                                    className="h-10 w-10 shrink-0 rounded-lg border border-input hover:bg-muted text-sm font-semibold">+1</button>
+                            </div>
                         </div>
                         <div className="space-y-1.5">
                             <Label className="text-xs">Status</Label>
@@ -113,8 +136,16 @@ export default function SectionEditPage() {
                             </select>
                         </div>
                         <div className="space-y-1.5">
-                            <Label className="text-xs">Academic Year</Label>
-                            <input className={inp} value={form.academic_year} onChange={set("academic_year")} placeholder="2024-25" />
+                            <Label className="text-xs">Session / Academic Year</Label>
+                            <select className={inp} value={sessionId} onChange={e => setSessionId(e.target.value)}>
+                                <option value="">Keep current ({form.academic_year || "—"})</option>
+                                {sessions.map(s => (
+                                    <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
+                                ))}
+                            </select>
+                            <p className="text-[11px] text-muted-foreground">
+                                Changing semester or session here updates every currently enrolled student in this section too.
+                            </p>
                         </div>
                         <div className="space-y-1.5">
                             <Label className="text-xs">Batch</Label>

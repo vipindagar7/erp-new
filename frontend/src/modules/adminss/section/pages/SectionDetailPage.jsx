@@ -315,21 +315,30 @@ export default function SectionDetailPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [statusValue,   setStatusValue]   = useState("");
   const [actionReason,  setActionReason]  = useState("");
+  const [sessions,      setSessions]      = useState([]);
+  const [sessionId,     setSessionId]     = useState(""); // "" = auto-detect (backend default)
+
+  // Load academic sessions once, for the session dropdown shown on promote/demote
+  useEffect(() => {
+    axiosInstance.get(EP.sections.sessions || "/sections/sessions")
+      .then(r => setSessions(r.data?.data || []))
+      .catch(() => {});
+  }, []);
 
   const doAction = async (type) => {
     setActionLoading(true);
     try {
       if (type === "promote") {
-        await axiosInstance.post(`/sections/${id}/promote`, { reason: actionReason });
+        await axiosInstance.post(`/sections/${id}/promote`, { reason: actionReason, to_session_id: sessionId || undefined });
         notify.success("Section promoted");
       } else if (type === "demote") {
-        await axiosInstance.post(`/sections/${id}/demote`, { reason: actionReason });
+        await axiosInstance.post(`/sections/${id}/demote`, { reason: actionReason, to_session_id: sessionId || undefined });
         notify.success("Section demoted");
       } else if (type === "status") {
         await axiosInstance.patch(EP.sections.update(id), { status: statusValue, reason: actionReason });
         notify.success(`Status changed to ${statusValue}`);
       }
-      setActionModal(null); setActionReason(""); setStatusValue("");
+      setActionModal(null); setActionReason(""); setStatusValue(""); setSessionId("");
       load();
     } catch (err) { notify.error(err); }
     finally { setActionLoading(false); }
@@ -571,7 +580,7 @@ export default function SectionDetailPage() {
                 : actionModal === "demote"  ? "Demote Section"
                 : "Change Status"}
               </h3>
-              <button onClick={() => { setActionModal(null); setActionReason(""); }}
+              <button onClick={() => { setActionModal(null); setActionReason(""); setSessionId(""); }}
                 className="p-1.5 rounded hover:bg-muted text-muted-foreground"><X size={14} /></button>
             </div>
 
@@ -600,6 +609,24 @@ export default function SectionDetailPage() {
               </div>
             )}
 
+            {(actionModal === "promote" || actionModal === "demote") && (
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground">
+                  Target Session <span className="text-muted-foreground/70">(optional — leave blank to auto-detect)</span>
+                </label>
+                <select value={sessionId} onChange={e => setSessionId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm">
+                  <option value="">Auto-detect session</option>
+                  {sessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
+                  ))}
+                </select>
+                <p className="text-xs text-muted-foreground">
+                  Applies to the section and every currently enrolled student in it.
+                </p>
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <label className="text-xs text-muted-foreground">Reason (optional)</label>
               <textarea value={actionReason} onChange={e => setActionReason(e.target.value)}
@@ -608,7 +635,7 @@ export default function SectionDetailPage() {
             </div>
 
             <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => { setActionModal(null); setActionReason(""); }}>
+              <Button variant="outline" className="flex-1" onClick={() => { setActionModal(null); setActionReason(""); setSessionId(""); }}>
                 Cancel
               </Button>
               <Button className={`flex-1 ${actionModal==="demote" ? "bg-amber-600 hover:bg-amber-700" : ""}`}

@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ArrowUp, ArrowDown, Search, CheckCircle, XCircle, AlertCircle,
-  Loader2, ChevronDown, ChevronUp, Info, Settings, Download, Upload,
+  Loader2, ChevronDown, ChevronUp, Info, Settings, Download, Upload, Layers,
 } from "lucide-react";
 import axiosInstance from "../../../../lib/axios.js";
 import { EP } from "../../../../config/api.config.js";
@@ -261,6 +261,14 @@ export default function SectionBulkPromotePage() {
   const [proReason, setProReason] = useState("");
   const [proActing, setProActing] = useState(false);
   const [proResult, setProResult] = useState(null);
+  const [proSessionId, setProSessionId] = useState(""); // "" = auto-detect per section
+  const [sessions, setSessions] = useState([]);
+
+  useEffect(() => {
+    axiosInstance.get(EP.sections.sessions || "/sections/sessions")
+      .then(r => setSessions(r.data?.data || []))
+      .catch(() => {});
+  }, []);
 
   // Status change
   const [statSelected, setStatSelected] = useState(new Set());
@@ -276,18 +284,62 @@ export default function SectionBulkPromotePage() {
   const [secStatusFilter, setSecStatusFilter] = useState("ACTIVE");
   const resetFilters = () => { setSearch(""); setBranchFilter(""); setSemFilter(""); setSecStatusFilter("ACTIVE"); };
 
+  // ── Bulk Edit (common fields — batch, session, room, etc.) ────
+  const [editSelected, setEditSelected] = useState(new Set());
+  const [editReason, setEditReason] = useState("");
+  const [editActing, setEditActing] = useState(false);
+  const [editResult, setEditResult] = useState(null);
+  const [editFields, setEditFields] = useState({
+    batch: "", session_id: "", room_no: "", capacity: "",
+    is_combined: "", status: "", description: "",
+  });
+  const setEditField = (k) => (v) => setEditFields(f => ({ ...f, [k]: v }));
+
+  const submitBulkEdit = async () => {
+    if (!editSelected.size) { notify.error("Select at least one section"); return; }
+    // Only send fields the admin actually filled in — blank means "leave unchanged"
+    const payload = {};
+    if (editFields.batch.trim()) payload.batch = editFields.batch.trim();
+    if (editFields.session_id) payload.session_id = editFields.session_id;
+    if (editFields.room_no.trim()) payload.room_no = editFields.room_no.trim();
+    if (editFields.capacity !== "") payload.capacity = parseInt(editFields.capacity);
+    if (editFields.is_combined !== "") payload.is_combined = editFields.is_combined === "true";
+    if (editFields.status) payload.status = editFields.status;
+    if (editFields.description.trim()) payload.description = editFields.description.trim();
+
+    if (!Object.keys(payload).length) { notify.error("Fill in at least one field to apply"); return; }
+
+    setEditActing(true); setEditResult(null);
+    try {
+      const r = await axiosInstance.post(EP.sections.bulkUpdate || "/sections/bulk-update", {
+        section_ids: [...editSelected], reason: editReason || undefined, ...payload,
+      });
+      setEditResult(r.data?.data);
+      const cnt = r.data?.data?.sections?.updated?.length || 0;
+      notify.success(`${cnt} section${cnt !== 1 ? "s" : ""} updated`);
+      setEditSelected(new Set());
+      setEditFields({ batch: "", session_id: "", room_no: "", capacity: "", is_combined: "", status: "", description: "" });
+    } catch (err) { notify.error(err); }
+    finally { setEditActing(false); }
+  };
+
+
   // ── Promote / Demote ─────────────────────────────────────────
   const submitPromote = async (action) => {
     if (!proSelected.size) { notify.error("Select at least one section"); return; }
     setProActing(true); setProResult(null);
     try {
       const url = action === "promote" ? EP.sections.bulkPromote : EP.sections.bulkDemote;
-      const r = await axiosInstance.post(url, { section_ids: [...proSelected], reason: proReason || undefined });
+      const r = await axiosInstance.post(url, {
+        section_ids: [...proSelected],
+        reason: proReason || undefined,
+        to_session_id: proSessionId || undefined,
+      });
       setProResult(r.data?.data);
       const d = r.data?.data;
       const cnt = d?.sections?.promoted?.length || d?.sections?.demoted?.length || 0;
       notify.success(`${cnt} section${cnt !== 1 ? "s" : ""} ${action}d`);
-      setProSelected(new Set());
+      setProSelected(new Set()); setProSessionId("");
     } catch (err) { notify.error(err); }
     finally { setProActing(false); }
   };
@@ -379,6 +431,7 @@ export default function SectionBulkPromotePage() {
   const TABS = [
     { key: "promote", label: "Promote", icon: ArrowUp },
     { key: "demote", label: "Demote", icon: ArrowDown },
+    { key: "edit", label: "Bulk Edit", icon: Layers },
     { key: "status", label: "Student Status", icon: Settings },
   ];
 
@@ -419,6 +472,16 @@ export default function SectionBulkPromotePage() {
             <div className="bg-card border border-border rounded-xl p-4 space-y-3">
               <p className="text-sm font-medium">{proSelected.size} section{proSelected.size !== 1 ? "s" : ""} selected</p>
               <div className="space-y-1.5">
+                <Label className="text-xs">Target Session <span className="text-muted-foreground">(optional — leave blank to auto-detect per section)</span></Label>
+                <select value={proSessionId} onChange={(e) => setProSessionId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm">
+                  <option value="">Auto-detect session</option>
+                  {sessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
                 <Label className="text-xs">Reason <span className="text-muted-foreground">(optional)</span></Label>
                 <Textarea value={proReason} onChange={(e) => setProReason(e.target.value)} rows={2} placeholder="Reason for promote…" />
               </div>
@@ -450,6 +513,16 @@ export default function SectionBulkPromotePage() {
           {proSelected.size > 0 && (
             <div className="bg-card border border-border rounded-xl p-4 space-y-3">
               <p className="text-sm font-medium">{proSelected.size} section{proSelected.size !== 1 ? "s" : ""} selected</p>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Target Session <span className="text-muted-foreground">(optional — leave blank to auto-detect per section)</span></Label>
+                <select value={proSessionId} onChange={(e) => setProSessionId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm">
+                  <option value="">Auto-detect session</option>
+                  {sessions.map(s => (
+                    <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
+                  ))}
+                </select>
+              </div>
               <Textarea value={proReason} onChange={(e) => setProReason(e.target.value)} rows={2} placeholder="Reason for demote…" />
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setProSelected(new Set())}>Clear</Button>
@@ -466,6 +539,87 @@ export default function SectionBulkPromotePage() {
       )}
 
       {/* ── STUDENT STATUS ────────────────────────────────────── */}
+      {/* ── BULK EDIT ────────────────────────────────────────── */}
+      {tab === "edit" && (
+        <div className="space-y-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 text-xs text-blue-700">
+            Leave a field blank to keep it unchanged for the selected sections. Only filled-in fields are applied.
+          </div>
+          <SectionSelector selected={editSelected} setSelected={setEditSelected}
+            search={search} setSearch={setSearch}
+            branchFilter={branchFilter} setBranchFilter={setBranchFilter}
+            semFilter={semFilter} setSemFilter={setSemFilter}
+            action="edit" statusFilter={secStatusFilter} setStatusFilter={setSecStatusFilter} />
+
+          {editSelected.size > 0 && (
+            <div className="bg-card border border-border rounded-xl p-4 space-y-4">
+              <p className="text-sm font-medium">{editSelected.size} section{editSelected.size !== 1 ? "s" : ""} selected</p>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Batch</Label>
+                  <Input value={editFields.batch} onChange={(e) => setEditField("batch")(e.target.value)} placeholder="e.g. 2024-2028" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Session</Label>
+                  <select value={editFields.session_id} onChange={(e) => setEditField("session_id")(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm">
+                    <option value="">— No change —</option>
+                    {sessions.map(s => (
+                      <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Room No</Label>
+                  <Input value={editFields.room_no} onChange={(e) => setEditField("room_no")(e.target.value)} placeholder="e.g. 101" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Capacity</Label>
+                  <Input type="number" value={editFields.capacity} onChange={(e) => setEditField("capacity")(e.target.value)} placeholder="e.g. 60" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Status</Label>
+                  <select value={editFields.status} onChange={(e) => setEditField("status")(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm">
+                    <option value="">— No change —</option>
+                    {["ACTIVE", "INACTIVE", "MERGED", "DISCONTINUED", "GRADUATED"].map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Combined Section (FYE)</Label>
+                  <select value={editFields.is_combined} onChange={(e) => setEditField("is_combined")(e.target.value)}
+                    className="w-full h-10 px-3 rounded-lg border border-input bg-background text-sm">
+                    <option value="">— No change —</option>
+                    <option value="true">Yes</option>
+                    <option value="false">No</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Description</Label>
+                <Input value={editFields.description} onChange={(e) => setEditField("description")(e.target.value)} placeholder="Leave blank to keep unchanged" />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-xs">Reason <span className="text-muted-foreground">(optional, for the audit log)</span></Label>
+                <Textarea value={editReason} onChange={(e) => setEditReason(e.target.value)} rows={2} placeholder="Reason for this bulk change…" />
+              </div>
+
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setEditSelected(new Set())}>Clear</Button>
+                <Button className="flex-1" disabled={editActing} onClick={submitBulkEdit}>
+                  {editActing ? <><Loader2 size={13} className="mr-1.5 animate-spin" />Applying…</>
+                    : <><Layers size={13} className="mr-1.5" />Apply to {editSelected.size} Section{editSelected.size !== 1 ? "s" : ""}</>}
+                </Button>
+              </div>
+            </div>
+          )}
+          <ResultPanel result={editResult} labels={{ ok: "Sections Updated" }} />
+        </div>
+      )}
+
       {tab === "status" && (
         <div className="space-y-4">
 

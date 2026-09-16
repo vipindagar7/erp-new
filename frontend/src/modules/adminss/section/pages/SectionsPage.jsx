@@ -1,7 +1,7 @@
 // src/modules/section/pages/SectionsPage.jsx  ── V3 REPLACE
 // Uses branch_id (schema_v2) — NOT course_id
 import { useState, useEffect } from "react";
-import { Layers, Plus, Edit, Trash2, Search, Upload, ArrowUp, ArrowDown, Users } from "lucide-react";
+import { Layers, Plus, Edit, Trash2, Search, Upload, ArrowUp, ArrowDown, Users, X } from "lucide-react";
 import axiosInstance from "../../../../lib/axios.js";
 import { EP } from "../../../../config/api.config.js";
 import { ROUTES } from "../../../../config/routes.js";
@@ -16,9 +16,14 @@ import BulkUploadPanel from "../../../../components/shared/BulkUploadPanel.jsx";
 const CURRENT_YEAR = new Date().getFullYear();
 const STATUS_COLOR = {
   ACTIVE: "bg-green-100 text-green-700",
+  INACTIVE: "bg-slate-100 text-slate-600",
   COMPLETED: "bg-blue-100 text-blue-700",
+  MERGED: "bg-violet-100 text-violet-700",
+  DISCONTINUED: "bg-red-100 text-red-700",
+  GRADUATED: "bg-emerald-100 text-emerald-700",
   ARCHIVED: "bg-gray-100 text-gray-600",
 };
+const STATUS_OPTIONS = ["ACTIVE", "INACTIVE", "MERGED", "DISCONTINUED", "GRADUATED", "COMPLETED", "ARCHIVED"];
 
 function SectionModal({ section, onClose, onSave }) {
   const [form, setForm] = useState({
@@ -49,7 +54,7 @@ function SectionModal({ section, onClose, onSave }) {
 
   const save = async () => {
     if (!form.name.trim() || !form.branch_id) { notify.error("Name and branch required"); return; }
-    if (!form.semester || form.semester < 1 || form.semester > 8) { notify.error("Semester must be 1–8"); return; }
+    if (!form.semester || form.semester < 1 || form.semester > 12) { notify.error("Semester must be 1–12"); return; }
     if (!form.batch.trim()) { notify.error("Batch required"); return; }
     setLoading(true);
     try {
@@ -103,7 +108,7 @@ function SectionModal({ section, onClose, onSave }) {
           <div className="grid grid-cols-3 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Semester * (1–8)</Label>
-              <Input type="number" min={1} max={8} value={form.semester}
+              <Input type="number" min={1} max={12} value={form.semester}
                 onChange={(e) => setForm((f) => ({ ...f, semester: e.target.value }))} />
             </div>
             <div className="space-y-1.5">
@@ -171,10 +176,19 @@ export default function SectionsPage() {
   const [branchFilter, setBranchFilter] = useState(searchParams.get("branch_id") || "");
   const [semFilter, setSemFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("ACTIVE");
+  const [batchFilter, setBatchFilter] = useState("");
+  const [sessionFilter, setSessionFilter] = useState("");
+  const [sessions, setSessions] = useState([]);
   const [modal, setModal] = useState(null);
   const [bulk, setBulk] = useState(false);
   const [delTarget, setDelTarget] = useState(null);
   const [acting, setActing] = useState(false);
+
+  useEffect(() => {
+    axiosInstance.get(EP.sections.sessions || "/sections/sessions")
+      .then(r => setSessions(r.data?.data || []))
+      .catch(() => {});
+  }, []);
 
   const load = async () => {
     setLoading(true);
@@ -184,7 +198,9 @@ export default function SectionsPage() {
           search: search || undefined,
           branch_id: branchFilter || undefined,
           semester: semFilter || undefined,
-          status: statusFilter || "ACTIVE",
+          status: statusFilter || "",
+          batch: batchFilter || undefined,
+          session_id: sessionFilter || undefined,
           limit: 200,
         },
       });
@@ -193,7 +209,15 @@ export default function SectionsPage() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { load(); }, [search, branchFilter, semFilter]);
+  // NOTE: statusFilter/batchFilter/sessionFilter were previously missing here —
+  // switching status ("Active only" ⇄ "All sections" ⇄ "Completed"…) or typing a
+  // batch/session filter silently did nothing until some other filter changed.
+  useEffect(() => { load(); }, [search, branchFilter, semFilter, statusFilter, batchFilter, sessionFilter]);
+
+  const clearFilters = () => {
+    setSearch(""); setBranchFilter(""); setSemFilter("");
+    setStatusFilter("ACTIVE"); setBatchFilter(""); setSessionFilter("");
+  };
 
   const handleDelete = async () => {
     setActing(true);
@@ -223,7 +247,7 @@ export default function SectionsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap items-start">
         <div className="relative flex-1 min-w-48">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search sections…" className="pl-9" />
@@ -235,15 +259,27 @@ export default function SectionsPage() {
         <select value={semFilter} onChange={(e) => setSemFilter(e.target.value)}
           className="h-10 px-3 rounded-md border border-input bg-background text-sm">
           <option value="">All Semesters</option>
-          {[1, 2, 3, 4, 5, 6, 7, 8].map((s) => <option key={s} value={s}>Semester {s}</option>)}
+          {Array.from({ length: 12 }, (_, i) => i + 1).map((s) => <option key={s} value={s}>Semester {s}</option>)}
         </select>
         <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}
           className="h-10 px-3 rounded-md border border-input bg-background text-sm">
           <option value="ACTIVE">Active only</option>
           <option value="">All sections</option>
-          <option value="COMPLETED">Completed</option>
-          <option value="ARCHIVED">Archived</option>
+          {STATUS_OPTIONS.filter((s) => s !== "ACTIVE").map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
+        <Input value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)} placeholder="Batch e.g. 2024-2028" className="w-40" />
+        <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)}
+          className="h-10 px-3 rounded-md border border-input bg-background text-sm">
+          <option value="">All Sessions</option>
+          {sessions.map((s) => (
+            <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
+          ))}
+        </select>
+        {(search || branchFilter || semFilter || statusFilter !== "ACTIVE" || batchFilter || sessionFilter) && (
+          <Button variant="outline" size="sm" onClick={clearFilters} className="h-10">
+            <X size={13} className="mr-1.5" /> Clear
+          </Button>
+        )}
       </div>
 
       {bulk && (
@@ -256,7 +292,7 @@ export default function SectionsPage() {
           fields={[
             { label: "name", required: true, notes: "Section name e.g. CSE-A" },
             { label: "branch_code", required: true, notes: "From Branches reference sheet" },
-            { label: "semester", required: true, notes: "1–8" },
+            { label: "semester", required: true, notes: "1–12" },
             { label: "batch", required: true, notes: "e.g. 2024-2028" },
             { label: "academic_year", required: false, notes: "e.g. 2024-25" },
             { label: "room_no", required: false, notes: "Classroom number" },
