@@ -74,6 +74,7 @@ const getCurrentSessionId = async () => {
 export const getAllSections = async ({
   page = 1, limit = 20, search, branch_id, program_id,
   dept_id, semester, status, academic_year, batch, session_id,
+  batches, session_ids,
 } = {}) => {
   const _page = parseInt(page, 10) || 1;
   const _limit = parseInt(limit, 10) || 20;
@@ -82,13 +83,25 @@ export const getAllSections = async ({
   if (branch_id) where.branch_id = branch_id;
   if (semester) where.semester = parseInt(semester);
   if (status) where.status = status;
-  if (batch) where.batch = { contains: batch, mode: "insensitive" };
+
+  // Multi-select batch — comma-separated list of exact batch strings, e.g. "2022-2026,2023-2027"
+  const batchList = Array.isArray(batches) ? batches : (typeof batches === "string" ? batches.split(",").map(s => s.trim()).filter(Boolean) : null);
+  if (batchList?.length) where.batch = { in: batchList };
+  else if (batch) where.batch = { contains: batch, mode: "insensitive" };
+
+  // Multi-select session — comma-separated academicSession ids, resolved to their codes/labels
+  const sessionIdList = Array.isArray(session_ids) ? session_ids : (typeof session_ids === "string" ? session_ids.split(",").map(s => s.trim()).filter(Boolean) : null);
   let _academicYear = academic_year;
-  if (session_id) {
+  if (sessionIdList?.length) {
+    const sessRows = await prisma.academicSession.findMany({ where: { id: { in: sessionIdList } } });
+    const labels = sessRows.map(s => s.code || s.name).filter(Boolean);
+    if (labels.length) where.academic_year = { in: labels };
+  } else if (session_id) {
     const sess = await prisma.academicSession.findUnique({ where: { id: session_id } });
     if (sess) _academicYear = sess.code || sess.name;
   }
-  if (_academicYear) where.academic_year = _academicYear;
+  if (!where.academic_year && _academicYear) where.academic_year = _academicYear;
+
   if (program_id) where.branch = { program_id };
   if (dept_id) where.branch = { program: { dept_id } };
   if (search) where.OR = [
@@ -100,6 +113,17 @@ export const getAllSections = async ({
     prisma.section.count({ where }),
   ]);
   return { sections, pagination: { total, page: _page, limit: _limit, pages: Math.ceil(total / _limit) } };
+};
+
+// ── Distinct batches actually in use (for the batch multi-select dropdown) ──
+export const getDistinctBatches = async () => {
+  const rows = await prisma.section.findMany({
+    where: { deleted_at: null, batch: { not: null } },
+    select: { batch: true },
+    distinct: ["batch"],
+    orderBy: { batch: "desc" },
+  });
+  return rows.map(r => r.batch).filter(Boolean);
 };
 
 
@@ -1559,7 +1583,7 @@ export const bulkUpdateStudentStatus = async (buffer, globalStatus, actingUser =
 
 // ── Get students in section with full filters ────────────────
 export const getSectionStudents = async (section_id, {
-  search, status, group_no, semester, batch_year, page = 1, limit = 200
+  search, status, group_no, batch_year, page = 1, limit = 200
 } = {}) => {
   const _page = parseInt(page, 10) || 1;
   const _limit = parseInt(limit, 10) || 200;

@@ -73,8 +73,10 @@ export const sectionListSchema = pagination.extend({
   semester: z.coerce.number().int().min(1).max(12).optional(),
   status: z.string().optional(), // "" / "all" returns all statuses
   batch: z.string().optional(),
+  batches: z.string().optional(),      // comma-separated exact batch values (multi-select)
   academic_year: z.string().optional(),
   session_id: z.string().uuid().optional(),
+  session_ids: z.string().optional(),  // comma-separated academicSession ids (multi-select)
 });
 // Backwards compat — old routes still import sectionPaginationSchema
 export const sectionPaginationSchema = sectionListSchema;

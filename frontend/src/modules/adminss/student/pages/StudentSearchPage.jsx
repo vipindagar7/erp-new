@@ -10,12 +10,15 @@ import { PromoteModal, ChangeSectionModal } from "../components/StudentModals.js
 import { notify } from "../../../../hooks/notify.js";
 import { deleteStudent, toggleStudentBlock } from "../../../../redux/student/studentSlice.js";
 import { useDispatch as useD } from "react-redux";
+import axiosInstance from "../../../../lib/axios.js";
+import { EP } from "../../../../config/api.config.js";
+import MultiSelectDropdown from "../../../../components/shared/MultiSelectDropdown.jsx";
 
 const currentYear = new Date().getFullYear();
 const ACADEMIC_YEARS = Array.from({ length: 6 }, (_, i) => { const y = currentYear - 3 + i; return `${y}-${y + 1}`; });
-const SEMESTERS   = [1,2,3,4,5,6,7,8];
+const SEMESTERS   = [1,2,3,4,5,6,7,8,9,10,11,12];
 const GENDERS     = ["MALE","FEMALE","OTHER"];
-const STATUSES    = ["ACTIVE","DETAINED","PASSED","LEFT","TRANSFERRED"];
+const STATUSES    = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED"];
 
 const sel = () => "w-full h-10 px-3 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-ring";
 const inp = () => "w-full h-10 px-3 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-ring";
@@ -40,6 +43,11 @@ export default function StudentSearchPage() {
 
   const [query, setQuery]     = useState("");
   const [filters, setFilters] = useState({});
+  const [batchFilter, setBatchFilter] = useState([]);   // multi-select — exact section.batch values
+  const [sessionFilter, setSessionFilter] = useState([]); // multi-select — academicSession ids
+  const [batches, setBatches] = useState([]);
+  const [sessions2, setSessions2] = useState([]); // avoid clashing with the `sections` redux selector above
+  const [loadingMeta, setLoadingMeta] = useState(true);
   const [searched, setSearched] = useState(false);
   const [page, setPage]       = useState(1);
   const [limit]               = useState(20);
@@ -55,17 +63,27 @@ export default function StudentSearchPage() {
     if (!courses.length)     dispatch(fetchCourses({ limit: 200 }));
   }, []);
 
+  useEffect(() => {
+    setLoadingMeta(true);
+    Promise.all([
+      axiosInstance.get(EP.sections.sessions || "/sections/sessions").then(r => r.data?.data || []).catch(() => []),
+      axiosInstance.get(EP.sections.batches || "/sections/batches").then(r => r.data?.data || []).catch(() => []),
+    ]).then(([sess, bat]) => { setSessions2(sess); setBatches(bat); }).finally(() => setLoadingMeta(false));
+  }, []);
+
   const setFilter = (k, v) => setFilters((p) => ({ ...p, [k]: v || undefined }));
 
   const handleSearch = () => {
     const params = { page, limit };
     if (query) params.search = query;
     Object.entries(filters).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== "") params[k] = v; });
+    if (batchFilter.length) params.batches = batchFilter.join(",");
+    if (sessionFilter.length) params.session_ids = sessionFilter.join(",");
     dispatch(getStudents(params));
     setSearched(true);
   };
 
-  const handleReset = () => { setQuery(""); setFilters({}); setSearched(false); };
+  const handleReset = () => { setQuery(""); setFilters({}); setBatchFilter([]); setSessionFilter([]); setSearched(false); };
 
   const handleToggleBlock = async (s) => {
     await dispatch(toggleStudentBlock({ id: s.id, isBlocked: !s.user?.isBlocked }));
@@ -82,7 +100,7 @@ export default function StudentSearchPage() {
   const toggleCheck  = (id) => setCheckedIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
   const toggleAll    = () => setCheckedIds(checkedIds.length === (students || []).length ? [] : (students || []).map((s) => s.id));
 
-  const activeCount = Object.values(filters).filter((v) => v !== undefined && v !== null && v !== "").length + (query ? 1 : 0);
+  const activeCount = Object.values(filters).filter((v) => v !== undefined && v !== null && v !== "").length + (query ? 1 : 0) + (batchFilter.length ? 1 : 0) + (sessionFilter.length ? 1 : 0);
 
   return (
     <div className="space-y-6">
@@ -148,6 +166,16 @@ export default function StudentSearchPage() {
                 {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
               </select>
               <input className={inp()} type="number" placeholder="Batch year e.g. 2024" value={filters.batch_year || ""} onChange={(e) => setFilter("batch_year", e.target.value)} />
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-muted-foreground">Batch</p>
+                <MultiSelectDropdown options={batches.map(b => ({ value: b, label: b }))}
+                  selected={batchFilter} onChange={setBatchFilter} placeholder="All batches" loading={loadingMeta} className="w-full" />
+              </div>
+              <div className="space-y-1.5">
+                <p className="text-[11px] text-muted-foreground">Session</p>
+                <MultiSelectDropdown options={sessions2.map(s => ({ value: s.id, label: s.code || s.name, sublabel: s.is_current ? "current" : undefined }))}
+                  selected={sessionFilter} onChange={setSessionFilter} placeholder="All sessions" loading={loadingMeta} className="w-full" />
+              </div>
             </FilterGroup>
 
             <FilterGroup title="Personal">

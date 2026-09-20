@@ -238,3 +238,9 @@ export const getSessions = async (req, res, next) => {
   try { ok(res, await svc.getAllAcademicSessions()); }
   catch(e) { fail(res,e,next); }
 };
+
+// ── Distinct batches (for the batch multi-select dropdown) ──
+export const getBatches = async (req, res, next) => {
+  try { ok(res, await svc.getDistinctBatches()); }
+  catch(e) { fail(res,e,next); }
+};

@@ -18,8 +18,10 @@ import SearchSelect from "../../../../components/shared/SearchSelect.jsx";
 const STATUS_COLOR = {
   ACTIVE:"bg-green-100 text-green-700", DETAINED:"bg-amber-100 text-amber-700",
   ON_HOLD:"bg-orange-100 text-orange-700", PASSED:"bg-blue-100 text-blue-700",
-  LEFT:"bg-red-100 text-red-700",
+  LEFT:"bg-red-100 text-red-700", TRANSFERRED:"bg-gray-100 text-gray-600",
+  SUSPENDED:"bg-rose-100 text-rose-700",
 };
+const STUDENT_STATUSES = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED"];
 const GROUP_COLOR = { G1:"bg-blue-100 text-blue-700", G2:"bg-violet-100 text-violet-700", G3:"bg-green-100 text-green-700" };
 
 function ResultPanel({ result }) {
@@ -60,7 +62,10 @@ export default function SectionStudentsPage() {
   const [search,     setSearch]     = useState("");
   const [statusF,    setStatusF]    = useState("");
   const [groupF,     setGroupF]     = useState("");
+  const [batchYearF, setBatchYearF] = useState("");
   const [page,       setPage]       = useState(1);
+
+  const clearFilters = () => { setSearch(""); setStatusF(""); setGroupF(""); setBatchYearF(""); setPage(1); };
 
   // Panels
   const [addPanel,    setAddPanel]    = useState(false);
@@ -87,14 +92,18 @@ export default function SectionStudentsPage() {
     setLoading(true);
     try {
       const r = await axiosInstance.get(`${EP.sections.byId(section_id)}/students`, {
-        params: { search: search || undefined, status: statusF || undefined, group_no: groupF || undefined, page, limit: 100 },
+        params: { search: search || undefined, status: statusF || undefined, group_no: groupF || undefined, batch_year: batchYearF || undefined, page, limit: 100 },
       });
       const d = r.data?.data;
       setStudents(d?.students || []);
       setTotal(d?.pagination?.total || 0);
     } catch { notify.error("Failed to load"); }
     finally { setLoading(false); }
-  }, [section_id, search, statusF, groupF, page]);
+  }, [section_id, search, statusF, groupF, batchYearF, page]);
+
+  // Reset to page 1 whenever a filter changes — otherwise a narrower filter
+  // can leave you stranded on a now-empty page.
+  useEffect(() => { setPage(1); }, [search, statusF, groupF, batchYearF]);
 
   useEffect(() => { loadSection(); }, [section_id]);
   useEffect(() => { load(); }, [load]);
@@ -239,7 +248,7 @@ export default function SectionStudentsPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
+      <div className="flex gap-3 flex-wrap items-center">
         <div className="relative flex-1 min-w-48">
           <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
           <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, roll no…" className="pl-9 h-9" />
@@ -247,7 +256,7 @@ export default function SectionStudentsPage() {
         <select value={statusF} onChange={(e) => setStatusF(e.target.value)}
           className="h-9 px-3 rounded-md border border-input bg-background text-sm">
           <option value="">All Status</option>
-          {["ACTIVE","DETAINED","ON_HOLD","PASSED","LEFT"].map((s) => <option key={s} value={s}>{s}</option>)}
+          {STUDENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
         <select value={groupF} onChange={(e) => setGroupF(e.target.value)}
           className="h-9 px-3 rounded-md border border-input bg-background text-sm">
@@ -255,6 +264,15 @@ export default function SectionStudentsPage() {
           {groups.map((g) => <option key={g} value={g}>{g}</option>)}
           {groups.length === 0 && <option value="" disabled>No groups assigned yet</option>}
         </select>
+        <Input value={batchYearF} onChange={(e) => setBatchYearF(e.target.value)} placeholder="Batch year e.g. 2022" className="h-9 w-40" />
+        {(search || statusF || groupF || batchYearF) && (
+          <Button variant="outline" size="sm" className="h-9" onClick={clearFilters}>
+            <X size={13} className="mr-1.5" /> Clear
+          </Button>
+        )}
+        {total > 0 && (
+          <span className="text-xs text-muted-foreground ml-auto">{total} student{total !== 1 ? "s" : ""}</span>
+        )}
       </div>
 
 

@@ -11,6 +11,7 @@ import axiosInstance from "../../../../lib/axios.js";
 import { EP } from "../../../../config/api.config.js";
 import { notify } from "../../../../hooks/notify.js";
 import { CanDo } from "../../../../components/shared/PermGuard.jsx";
+import MultiSelectDropdown from "../../../../components/shared/MultiSelectDropdown.jsx";
 
 const STATUS_COLOR = {
   ACTIVE: "bg-green-100 text-green-700",
@@ -30,11 +31,25 @@ export default function StudentsListPage() {
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
     status: "",
+    isBlocked: "",
     dept_id: user?.dept_ids?.[0] || "", // pre-fill with user's dept scope
     branch_id: "",
     section_id: "",
   });
   const [page, setPage] = useState(1);
+  const [batchFilter, setBatchFilter] = useState([]);   // multi-select — exact section.batch values
+  const [sessionFilter, setSessionFilter] = useState([]); // multi-select — academicSession ids
+  const [batches, setBatches] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [loadingMeta, setLoadingMeta] = useState(true);
+
+  useEffect(() => {
+    setLoadingMeta(true);
+    Promise.all([
+      axiosInstance.get(EP.sections.sessions || "/sections/sessions").then(r => r.data?.data || []).catch(() => []),
+      axiosInstance.get(EP.sections.batches || "/sections/batches").then(r => r.data?.data || []).catch(() => []),
+    ]).then(([sess, bat]) => { setSessions(sess); setBatches(bat); }).finally(() => setLoadingMeta(false));
+  }, []);
 
   // Dept scope enforcement
   // useMemo to prevent new array ref on every render (causes infinite loop)
@@ -44,7 +59,14 @@ export default function StudentsListPage() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { page, limit: 30, q: search || undefined, ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)) };
+      // BUG: was sending `q`, but paginationSchema only recognizes `search` —
+      // Zod silently stripped it, so the search box never actually filtered anything.
+      const params = {
+        page, limit: 30, search: search || undefined,
+        batches: batchFilter.length ? batchFilter.join(",") : undefined,
+        session_ids: sessionFilter.length ? sessionFilter.join(",") : undefined,
+        ...Object.fromEntries(Object.entries(filters).filter(([, v]) => v)),
+      };
       // If user has dept scope, add dept_ids filter
       if (hasDeptScope && !params.dept_id) params.dept_ids = deptIds.join(",");
 
@@ -53,16 +75,23 @@ export default function StudentsListPage() {
       setPagination(res.data?.data?.pagination || { total: 0, page: 1, pages: 1 });
     } catch { notify.error("Failed to load students"); }
     finally { setLoading(false); }
-  }, [page, search, filters, deptIds, hasDeptScope]);
+  }, [page, search, filters, batchFilter, sessionFilter, deptIds, hasDeptScope]);
 
   useEffect(() => { load(); }, [load]);
-  useEffect(() => { setPage(1); }, [search, filters]);
+  useEffect(() => { setPage(1); }, [search, filters, batchFilter, sessionFilter]);
 
   const toggleBlock = async (student) => {
-    const action = student.user?.isBlocked ? "unblock" : "block";
+    const nextBlocked = !student.user?.isBlocked;
     try {
-      await axiosInstance.patch(`/api/students/${student.id}/block`);
-      notify.success(`Student ${action}ed`);
+      // BUG: previously sent no request body. The backend's toggleBlock controller
+      // falls back to `req.path.includes("block") && !req.path.includes("unblock")`
+      // when isBlocked isn't in the body — and since this route's path is literally
+      // "/:id/block", that fallback is ALWAYS true. Every click re-blocked the
+      // student, even when the intent was to unblock. Sending isBlocked explicitly
+      // fixes it, and using EP.students.byId matches the rest of the app instead of
+      // a hardcoded "/api/students/..." path that could double up on axios's baseURL.
+      await axiosInstance.patch(`${EP.students.byId(student.id)}/block`, { isBlocked: nextBlocked });
+      notify.success(`Student ${nextBlocked ? "block" : "unblock"}ed`);
       load();
     } catch (e) { notify.error(e.response?.data?.message || "Failed"); }
   };
@@ -97,8 +126,18 @@ export default function StudentsListPage() {
         <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
           className="h-9 px-3 rounded-lg border border-input bg-background text-sm outline-none">
           <option value="">All Status</option>
-          {["ACTIVE", "DETAINED", "PASSED", "BLOCKED"].map(s => <option key={s}>{s}</option>)}
+          {["ACTIVE", "DETAINED", "ON_HOLD", "LEFT", "TRANSFERRED", "SUSPENDED", "PASSED"].map(s => <option key={s}>{s}</option>)}
         </select>
+        <select value={filters.isBlocked} onChange={e => setFilters(f => ({ ...f, isBlocked: e.target.value }))}
+          className="h-9 px-3 rounded-lg border border-input bg-background text-sm outline-none">
+          <option value="">Account — Any</option>
+          <option value="false">Not Blocked</option>
+          <option value="true">Blocked</option>
+        </select>
+        <MultiSelectDropdown options={batches.map(b => ({ value: b, label: b }))}
+          selected={batchFilter} onChange={setBatchFilter} placeholder="All batches" loading={loadingMeta} />
+        <MultiSelectDropdown options={sessions.map(s => ({ value: s.id, label: s.code || s.name, sublabel: s.is_current ? "current" : undefined }))}
+          selected={sessionFilter} onChange={setSessionFilter} placeholder="All sessions" loading={loadingMeta} />
         {/* Dept filter — only show if user has institute-wide access */}
         {!hasDeptScope && (
           <select value={filters.dept_id} onChange={e => setFilters(f => ({ ...f, dept_id: e.target.value }))}

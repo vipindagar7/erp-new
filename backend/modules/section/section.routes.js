@@ -15,6 +15,7 @@ const upload = multer({ storage: multer.memoryStorage() });
 // ═══════════════════════════════════════════════════════════════
 router.get( "/template",                authenticate,                          c.sectionTemplate);
 router.get( "/sessions",                authenticate,                          c.getSessions);
+router.get( "/batches",                 authenticate,                          c.getBatches);
 router.post("/bulk-upload",             authenticate, requirePerm("section:create"),  upload.single("file"), c.sectionBulkUpload);
 router.post("/bulk-update",             authenticate, requirePerm("section:update"),   c.bulkUpdate);
 router.post("/bulk-promote",            authenticate, requirePerm("section:promote"), c.bulkPromote);

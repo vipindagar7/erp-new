@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Input }  from "@/components/ui/input";
 import { Label }  from "@/components/ui/label";
 import SearchSelect from "../../../../components/shared/SearchSelect.jsx";
+import MultiSelectDropdown from "../../../../components/shared/MultiSelectDropdown.jsx";
 import { useSelector } from "react-redux";
 
 const STATUS_COLOR = {
@@ -39,7 +40,20 @@ export default function StudentsAllPage() {
     dept_id: "", program_id: "", branch_id: "", section_id: "",
     status: "", semester: "", batch_year: "", gender: "",
   });
+  const [batchFilter, setBatchFilter] = useState([]);   // multi-select — exact section.batch values
+  const [sessionFilter, setSessionFilter] = useState([]); // multi-select — academicSession ids
+  const [batches, setBatches] = useState([]);
+  const [sessions, setSessions] = useState([]);
+  const [loadingMeta, setLoadingMeta] = useState(true);
   const [showFilters, setShowFilters] = useState(false);
+
+  useEffect(() => {
+    setLoadingMeta(true);
+    Promise.all([
+      axiosInstance.get(EP.sections.sessions || "/sections/sessions").then(r => r.data?.data || []).catch(() => []),
+      axiosInstance.get(EP.sections.batches || "/sections/batches").then(r => r.data?.data || []).catch(() => []),
+    ]).then(([sess, bat]) => { setSessions(sess); setBatches(bat); }).finally(() => setLoadingMeta(false));
+  }, []);
 
   // ── Data state ───────────────────────────────────────────────
   const [students,  setStudents]  = useState([]);
@@ -71,6 +85,8 @@ export default function StudentsAllPage() {
         status:     filters.status     || undefined,
         batch_year: filters.batch_year || undefined,
         gender:     filters.gender     || undefined,
+        batches:     batchFilter.length ? batchFilter.join(",") : undefined,
+        session_ids: sessionFilter.length ? sessionFilter.join(",") : undefined,
       };
       // semester filter — needs section/enrollment join
       if (filters.semester) params.semester = filters.semester;
@@ -84,7 +100,7 @@ export default function StudentsAllPage() {
       setSelectAll(false);
     } catch { notify.error("Failed to load students"); }
     finally { setLoading(false); }
-  }, [search, filters]);
+  }, [search, filters, batchFilter, sessionFilter]);
 
   useEffect(() => {
     clearTimeout(timer.current);
@@ -96,10 +112,11 @@ export default function StudentsAllPage() {
 
   const resetFilters = () => {
     setFilters({ dept_id:"", program_id:"", branch_id:"", section_id:"", status:"", semester:"", batch_year:"", gender:"" });
+    setBatchFilter([]); setSessionFilter([]);
     setSearch("");
   };
 
-  const activeFilterCount = Object.values(filters).filter(Boolean).length;
+  const activeFilterCount = Object.values(filters).filter(Boolean).length + (batchFilter.length ? 1 : 0) + (sessionFilter.length ? 1 : 0);
 
   // ── Selection ─────────────────────────────────────────────────
   const toggleOne = (id) => setSelected((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -216,13 +233,23 @@ export default function StudentsAllPage() {
               <select value={filters.semester} onChange={(e) => setFilter("semester")(e.target.value)}
                 className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm">
                 <option value="">All semesters</option>
-                {[1,2,3,4,5,6,7,8].map((s) => <option key={s} value={s}>Semester {s}</option>)}
+                {Array.from({ length: 12 }, (_, i) => i + 1).map((s) => <option key={s} value={s}>Semester {s}</option>)}
               </select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs">Batch Year</Label>
+              <Label className="text-xs">Batch Year <span className="text-muted-foreground">(admission year)</span></Label>
               <Input value={filters.batch_year} onChange={(e) => setFilter("batch_year")(e.target.value)}
                 placeholder="e.g. 2024" type="number" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Batch</Label>
+              <MultiSelectDropdown options={batches.map(b => ({ value: b, label: b }))}
+                selected={batchFilter} onChange={setBatchFilter} placeholder="All batches" loading={loadingMeta} className="w-full" />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">Session</Label>
+              <MultiSelectDropdown options={sessions.map(s => ({ value: s.id, label: s.code || s.name, sublabel: s.is_current ? "current" : undefined }))}
+                selected={sessionFilter} onChange={setSessionFilter} placeholder="All sessions" loading={loadingMeta} className="w-full" />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Gender</Label>

@@ -86,6 +86,7 @@ export const getAllStudents = async ({
   course_id,  // legacy alias for branch_id
   // Multi-value filters (comma-separated strings or arrays)
   dept_ids, section_ids, course_ids, program_ids,
+  batches, session_ids,
   // Other filters
   academic_year, semester, session, gender, batch_year,
   status, is_hosteller, is_using_transport,
@@ -102,6 +103,16 @@ export const getAllStudents = async ({
   const sectionFilter = parseMulti(section_ids) || (section_id ? [section_id] : null);
   const branchFilter = parseMulti(course_ids) || (branch_id ? [branch_id] : null) || (course_id ? [course_id] : null);
   const programFilter = parseMulti(program_ids) || (program_id ? [program_id] : null);
+  const batchFilter = parseMulti(batches); // exact section.batch values, e.g. "2022-2026,2023-2027"
+
+  // Multi-select session — comma-separated academicSession ids, resolved to codes/labels,
+  // matched against the student's current enrollment's academic_year (same convention as sections).
+  const sessionIdFilter = parseMulti(session_ids);
+  let sessionLabels = null;
+  if (sessionIdFilter?.length) {
+    const sessRows = await prisma.academicSession.findMany({ where: { id: { in: sessionIdFilter } } });
+    sessionLabels = sessRows.map((s) => s.code || s.name).filter(Boolean);
+  }
 
   const where = {
     ...(deptFilter && { dept_id: { in: deptFilter } }),
@@ -110,7 +121,7 @@ export const getAllStudents = async ({
     ...(programFilter && { program_id: { in: programFilter } }),
     ...(gender && { gender }),
     ...(batch_year && { batch_year: parseInt(batch_year) }),
-    ...(batch && { section: { batch } }),
+    ...(batchFilter?.length ? { section: { batch: { in: batchFilter } } } : (batch && { section: { batch } })),
     ...(is_hosteller !== undefined && { is_hosteller: is_hosteller === "true" || is_hosteller === true }),
     ...(is_using_transport !== undefined && { is_using_transport: is_using_transport === "true" || is_using_transport === true }),
     ...(isBlocked !== undefined && { user: { isBlocked: isBlocked === "true" || isBlocked === true } }),
@@ -124,10 +135,10 @@ export const getAllStudents = async ({
         { user: { email: { contains: search, mode: "insensitive" } } },
       ],
     }),
-    ...((academic_year || semester || session || status) ? {
+    ...((academic_year || semester || session || status || sessionLabels?.length) ? {
       enrollments: {
         some: {
-          ...(academic_year && { academic_year }),
+          ...(sessionLabels?.length ? { academic_year: { in: sessionLabels } } : (academic_year && { academic_year })),
           ...(semester && { semester: parseInt(semester) }),
           ...(session && { session }),
           ...(status && { status }),

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import SearchSelect from "../../../../components/shared/SearchSelect.jsx";
+import MultiSelectDropdown from "../../../../components/shared/MultiSelectDropdown.jsx";
 import BulkUploadPanel from "../../../../components/shared/BulkUploadPanel.jsx";
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -176,18 +177,22 @@ export default function SectionsPage() {
   const [branchFilter, setBranchFilter] = useState(searchParams.get("branch_id") || "");
   const [semFilter, setSemFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("ACTIVE");
-  const [batchFilter, setBatchFilter] = useState("");
-  const [sessionFilter, setSessionFilter] = useState("");
+  const [batchFilter, setBatchFilter] = useState([]);   // multi-select — array of exact batch strings
+  const [sessionFilter, setSessionFilter] = useState([]); // multi-select — array of academicSession ids
   const [sessions, setSessions] = useState([]);
+  const [batches, setBatches] = useState([]);
+  const [loadingMeta, setLoadingMeta] = useState(true);
   const [modal, setModal] = useState(null);
   const [bulk, setBulk] = useState(false);
   const [delTarget, setDelTarget] = useState(null);
   const [acting, setActing] = useState(false);
 
   useEffect(() => {
-    axiosInstance.get(EP.sections.sessions || "/sections/sessions")
-      .then(r => setSessions(r.data?.data || []))
-      .catch(() => {});
+    setLoadingMeta(true);
+    Promise.all([
+      axiosInstance.get(EP.sections.sessions || "/sections/sessions").then(r => r.data?.data || []).catch(() => []),
+      axiosInstance.get(EP.sections.batches || "/sections/batches").then(r => r.data?.data || []).catch(() => []),
+    ]).then(([sess, bat]) => { setSessions(sess); setBatches(bat); }).finally(() => setLoadingMeta(false));
   }, []);
 
   const load = async () => {
@@ -199,8 +204,8 @@ export default function SectionsPage() {
           branch_id: branchFilter || undefined,
           semester: semFilter || undefined,
           status: statusFilter || "",
-          batch: batchFilter || undefined,
-          session_id: sessionFilter || undefined,
+          batches: batchFilter.length ? batchFilter.join(",") : undefined,
+          session_ids: sessionFilter.length ? sessionFilter.join(",") : undefined,
           limit: 200,
         },
       });
@@ -216,7 +221,7 @@ export default function SectionsPage() {
 
   const clearFilters = () => {
     setSearch(""); setBranchFilter(""); setSemFilter("");
-    setStatusFilter("ACTIVE"); setBatchFilter(""); setSessionFilter("");
+    setStatusFilter("ACTIVE"); setBatchFilter([]); setSessionFilter([]);
   };
 
   const handleDelete = async () => {
@@ -267,15 +272,11 @@ export default function SectionsPage() {
           <option value="">All sections</option>
           {STATUS_OPTIONS.filter((s) => s !== "ACTIVE").map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <Input value={batchFilter} onChange={(e) => setBatchFilter(e.target.value)} placeholder="Batch e.g. 2024-2028" className="w-40" />
-        <select value={sessionFilter} onChange={(e) => setSessionFilter(e.target.value)}
-          className="h-10 px-3 rounded-md border border-input bg-background text-sm">
-          <option value="">All Sessions</option>
-          {sessions.map((s) => (
-            <option key={s.id} value={s.id}>{s.code || s.name}{s.is_current ? " (current)" : ""}</option>
-          ))}
-        </select>
-        {(search || branchFilter || semFilter || statusFilter !== "ACTIVE" || batchFilter || sessionFilter) && (
+        <MultiSelectDropdown label="Batch" options={batches.map(b => ({ value: b, label: b }))}
+          selected={batchFilter} onChange={setBatchFilter} placeholder="All batches" loading={loadingMeta} />
+        <MultiSelectDropdown label="Session" options={sessions.map(s => ({ value: s.id, label: s.code || s.name, sublabel: s.is_current ? "current" : undefined }))}
+          selected={sessionFilter} onChange={setSessionFilter} placeholder="All sessions" loading={loadingMeta} />
+        {(search || branchFilter || semFilter || statusFilter !== "ACTIVE" || batchFilter.length > 0 || sessionFilter.length > 0) && (
           <Button variant="outline" size="sm" onClick={clearFilters} className="h-10">
             <X size={13} className="mr-1.5" /> Clear
           </Button>

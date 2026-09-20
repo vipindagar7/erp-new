@@ -29,12 +29,14 @@ export const paginationSchema = z.object({
   section_ids: z.string().optional(),
   course_ids: z.string().optional(),
   program_ids: z.string().optional(),
+  batches: z.string().optional(),     // comma-separated exact section.batch values (multi-select)
+  session_ids: z.string().optional(), // comma-separated academicSession ids (multi-select)
   // Other filters
   gender: z.string().optional().nullable(),
   status: z.enum(["ACTIVE", "DETAINED", "PASSED", "LEFT", "TRANSFERRED", "ON_HOLD", "SUSPENDED"]).optional(),
   batch_year: z.coerce.number().int().optional(),
   academic_year: z.string().optional(),
-  semester: z.coerce.number().int().min(1).max(8).optional(),
+  semester: z.coerce.number().int().min(1).max(12).optional(),
   session: z.string().optional(),
   is_hosteller: z.string().optional(),
   is_using_transport: z.string().optional(),
@@ -80,7 +82,7 @@ const studentBase = z.object({
   // Academic placement
   section_id: z.string().uuid().optional().nullable(),
   academic_year: z.string().min(1, "Academic year required"),
-  semester: z.coerce.number().int().min(1).max(8),
+  semester: z.coerce.number().int().min(1).max(12),
   // Hostel / transport
   is_hosteller: z.boolean().optional().default(false),
   is_using_transport: z.boolean().optional().default(false),
