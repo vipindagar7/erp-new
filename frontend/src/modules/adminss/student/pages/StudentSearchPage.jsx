@@ -18,7 +18,7 @@ const currentYear = new Date().getFullYear();
 const ACADEMIC_YEARS = Array.from({ length: 6 }, (_, i) => { const y = currentYear - 3 + i; return `${y}-${y + 1}`; });
 const SEMESTERS   = [1,2,3,4,5,6,7,8,9,10,11,12];
 const GENDERS     = ["MALE","FEMALE","OTHER"];
-const STATUSES    = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED"];
+const STATUSES    = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED","INACTIVE","DISCONTINUED"];
 
 const sel = () => "w-full h-10 px-3 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-ring";
 const inp = () => "w-full h-10 px-3 rounded-lg border border-input bg-background text-sm outline-none focus:ring-2 focus:ring-ring";

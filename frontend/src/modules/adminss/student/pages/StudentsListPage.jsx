@@ -16,8 +16,14 @@ import MultiSelectDropdown from "../../../../components/shared/MultiSelectDropdo
 const STATUS_COLOR = {
   ACTIVE: "bg-green-100 text-green-700",
   DETAINED: "bg-red-100 text-red-700",
+  ON_HOLD: "bg-orange-100 text-orange-700",
+  LEFT: "bg-red-100 text-red-700",
+  TRANSFERRED: "bg-gray-100 text-gray-600",
+  SUSPENDED: "bg-rose-100 text-rose-700",
   BLOCKED: "bg-amber-100 text-amber-700",
   PASSED: "bg-blue-100 text-blue-700",
+  INACTIVE: "bg-slate-100 text-slate-600",
+  DISCONTINUED: "bg-red-100 text-red-700",
 };
 
 export default function StudentsListPage() {
@@ -126,7 +132,7 @@ export default function StudentsListPage() {
         <select value={filters.status} onChange={e => setFilters(f => ({ ...f, status: e.target.value }))}
           className="h-9 px-3 rounded-lg border border-input bg-background text-sm outline-none">
           <option value="">All Status</option>
-          {["ACTIVE", "DETAINED", "ON_HOLD", "LEFT", "TRANSFERRED", "SUSPENDED", "PASSED"].map(s => <option key={s}>{s}</option>)}
+          {["ACTIVE", "DETAINED", "ON_HOLD", "LEFT", "TRANSFERRED", "SUSPENDED", "PASSED", "INACTIVE", "DISCONTINUED"].map(s => <option key={s}>{s}</option>)}
         </select>
         <select value={filters.isBlocked} onChange={e => setFilters(f => ({ ...f, isBlocked: e.target.value }))}
           className="h-9 px-3 rounded-lg border border-input bg-background text-sm outline-none">

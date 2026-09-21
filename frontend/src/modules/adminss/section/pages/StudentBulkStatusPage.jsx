@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Label }  from "@/components/ui/label";
 import SearchSelect from "../../../../components/shared/SearchSelect.jsx";
 
-const STATUSES = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED"];
+const STATUSES = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED","INACTIVE","DISCONTINUED"];
 const STATUS_META = {
   ACTIVE:      { color: "green",  desc: "Normal active student"              },
   DETAINED:    { color: "amber",  desc: "Detained — stays in current sem"    },
@@ -17,6 +17,8 @@ const STATUS_META = {
   TRANSFERRED: { color: "gray",   desc: "Transferred — login blocked"        },
   SUSPENDED:   { color: "red",    desc: "Suspended — login blocked"          },
   PASSED:      { color: "blue",   desc: "Graduated — becomes alumni"         },
+  INACTIVE:    { color: "gray",   desc: "Inactive — section not currently active" },
+  DISCONTINUED:{ color: "red",    desc: "Section discontinued"               },
 };
 
 export default function StudentBulkStatusPage() {

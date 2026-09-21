@@ -20,8 +20,9 @@ const STATUS_COLOR = {
   ON_HOLD:"bg-orange-100 text-orange-700", PASSED:"bg-blue-100 text-blue-700",
   LEFT:"bg-red-100 text-red-700", TRANSFERRED:"bg-gray-100 text-gray-600",
   SUSPENDED:"bg-rose-100 text-rose-700",
+  INACTIVE:"bg-slate-100 text-slate-600", DISCONTINUED:"bg-red-100 text-red-700",
 };
-const STUDENT_STATUSES = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED"];
+const STUDENT_STATUSES = ["ACTIVE","DETAINED","ON_HOLD","LEFT","TRANSFERRED","SUSPENDED","PASSED","INACTIVE","DISCONTINUED"];
 const GROUP_COLOR = { G1:"bg-blue-100 text-blue-700", G2:"bg-violet-100 text-violet-700", G3:"bg-green-100 text-green-700" };
 
 function ResultPanel({ result }) {

@@ -25,9 +25,11 @@ const STATUS_COLOR = {
   LEFT:        "bg-red-100 text-red-700",
   TRANSFERRED: "bg-gray-100 text-gray-600",
   SUSPENDED:   "bg-red-100 text-red-700",
+  INACTIVE:    "bg-slate-100 text-slate-600",
+  DISCONTINUED:"bg-red-100 text-red-700",
 };
 
-const STATUSES = ["ACTIVE","DETAINED","ON_HOLD","PASSED","LEFT","TRANSFERRED","SUSPENDED"];
+const STATUSES = ["ACTIVE","DETAINED","ON_HOLD","PASSED","LEFT","TRANSFERRED","SUSPENDED","INACTIVE","DISCONTINUED"];
 
 export default function StudentsAllPage() {
   const navigate = useNavigate();

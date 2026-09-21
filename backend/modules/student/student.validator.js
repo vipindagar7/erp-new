@@ -33,7 +33,7 @@ export const paginationSchema = z.object({
   session_ids: z.string().optional(), // comma-separated academicSession ids (multi-select)
   // Other filters
   gender: z.string().optional().nullable(),
-  status: z.enum(["ACTIVE", "DETAINED", "PASSED", "LEFT", "TRANSFERRED", "ON_HOLD", "SUSPENDED"]).optional(),
+  status: z.enum(["ACTIVE", "DETAINED", "PASSED", "LEFT", "TRANSFERRED", "ON_HOLD", "SUSPENDED", "INACTIVE", "DISCONTINUED"]).optional(),
   batch_year: z.coerce.number().int().optional(),
   academic_year: z.string().optional(),
   semester: z.coerce.number().int().min(1).max(12).optional(),

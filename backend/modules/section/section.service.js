@@ -417,16 +417,21 @@ export const updateSection = async (id, data, actingUser = {}) => {
   }
 
   // ── Section status → student status ─────────────────────────
-  // Section.status and Student.status are DIFFERENT enums — a section going
-  // INACTIVE/MERGED/ARCHIVED doesn't map onto any single student status, so we
-  // deliberately do NOT guess for those (silently mis-setting a student's status
-  // is worse than not cascading at all). Only the two unambiguous cases cascade:
-  //   section → ACTIVE               : students' own status is reset to ACTIVE
-  //   section → GRADUATED/COMPLETED  : students' own status becomes PASSED
-  // For DETAINED/ON_HOLD/LEFT/TRANSFERRED/SUSPENDED, use detainStudents() or the
-  // dedicated status-change flow instead — those already snapshot + audit-log
-  // per student, which a blind bulk cascade here would not.
-  const STATUS_CASCADE_MAP = { ACTIVE: "ACTIVE", GRADUATED: "PASSED", COMPLETED: "PASSED" };
+  // Student.status is a plain String column (no Prisma enum), so any value is
+  // safe to write. Confirmed mapping per your instructions:
+  //   section → ACTIVE       : students' status → ACTIVE
+  //   section → INACTIVE     : students' status → INACTIVE (direct copy)
+  //   section → DISCONTINUED : students' status → DISCONTINUED (direct copy)
+  //   section → GRADUATED/COMPLETED : students' status → PASSED
+  //   section → MERGED       : NOT cascaded — students are moved manually
+  const STATUS_CASCADE_MAP = {
+    ACTIVE: "ACTIVE",
+    INACTIVE: "INACTIVE",
+    DISCONTINUED: "DISCONTINUED",
+    GRADUATED: "PASSED",
+    COMPLETED: "PASSED",
+    // MERGED intentionally omitted — no cascade
+  };
   let students_status_updated = 0;
   if (statusChanged && STATUS_CASCADE_MAP[data.status]) {
     const targetStudentStatus = STATUS_CASCADE_MAP[data.status];
