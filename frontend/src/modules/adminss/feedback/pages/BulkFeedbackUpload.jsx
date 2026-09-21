@@ -54,7 +54,8 @@ export default function BulkFeedbackUpload({ selectedFormId = "", forms = [], is
       );
       const d = res.data?.data ?? res.data;
       setResult(d);
-      notify.success(`${d.success?.length ?? 0} submitted, ${d.failed?.length ?? 0} failed`);
+      const pct = d.percent_success ?? (d.total ? Math.round(((d.success?.length ?? 0) / d.total) * 100) : 0);
+      notify.success(`${pct}% completed — ${d.success?.length ?? 0} submitted, ${d.failed?.length ?? 0} failed`);
     } catch (err) {
       notify.error(err.response?.data?.message || "Upload failed");
     } finally {
@@ -162,6 +163,24 @@ export default function BulkFeedbackUpload({ selectedFormId = "", forms = [], is
             </button>
           </div>
 
+          {/* Completion % */}
+          {(() => {
+            const total = result.total || 0;
+            const pct = result.percent_success ?? (total ? Math.round(((result.success?.length ?? 0) / total) * 100) : 0);
+            return (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="font-medium text-foreground">{pct}% completed</span>
+                  <span className="text-muted-foreground">{result.success?.length ?? 0} of {total} rows submitted</span>
+                </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden flex">
+                  <div className="bg-green-500 h-full transition-all" style={{ width: `${pct}%` }} />
+                  <div className="bg-red-400 h-full transition-all" style={{ width: `${100 - pct}%` }} />
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Summary pills */}
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-xl p-3 text-center">
@@ -177,6 +196,7 @@ export default function BulkFeedbackUpload({ selectedFormId = "", forms = [], is
               <p className="text-xs text-muted-foreground mt-0.5">Total Rows</p>
             </div>
           </div>
+
 
           {/* Successes */}
           {result.success?.length > 0 && (

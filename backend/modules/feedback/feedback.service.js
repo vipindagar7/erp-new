@@ -744,6 +744,27 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
 
   const results = { success: [], failed: [], total: rows.length };
 
+  // Robust date parsing for the back-date column:
+  //  - real Date object (from cellDates: true when Excel auto-formatted the cell)
+  //  - ISO "YYYY-MM-DD" (pinned to noon so it can't drift a day across timezones)
+  //  - "DD-MM-YYYY" or "DD/MM/YYYY" — the common Indian way to type a date, which
+  //    JS's native Date parser does NOT understand and silently returns Invalid
+  //    Date for, which is why back-dates typed this way were always falling back
+  //    to "now" with no error at all.
+  //  - anything else: native Date parsing as a last resort
+  const parseSubmittedDate = (raw) => {
+    if (raw instanceof Date && !isNaN(raw)) return raw;
+    if (raw === undefined || raw === null) return null;
+    const s = raw.toString().trim();
+    if (!s) return null;
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], 12, 0, 0);
+    m = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+    if (m) return new Date(+m[3], +m[2] - 1, +m[1], 12, 0, 0);
+    const p = new Date(s);
+    return isNaN(p) ? null : p;
+  };
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     const rowNum = i + 2;
@@ -762,19 +783,8 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
       });
       if (existing) { results.failed.push({ row: rowNum, email, reason: "Already submitted" }); continue; }
 
-      let submittedAt = new Date();
-      // Accept a real Date (now reliable thanks to cellDates: true above), a
-      // plain "YYYY-MM-DD" (date only — pinned to noon so it can't drift to the
-      // adjacent calendar day across timezones), or a full datetime string.
-      const rawDate = row.submitted_at;
-      if (rawDate instanceof Date && !isNaN(rawDate)) {
-        submittedAt = rawDate;
-      } else if (rawDate !== undefined && rawDate !== null && rawDate.toString().trim()) {
-        const s = rawDate.toString().trim();
-        const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
-        const p = new Date(dateOnly ? `${s}T12:00:00` : s);
-        if (!isNaN(p)) submittedAt = p;
-      }
+      const parsedDate = parseSubmittedDate(row.submitted_at);
+      const submittedAt = parsedDate || new Date();
 
       const answers = [];
       for (const [header, question] of Object.entries(questionMap)) {
@@ -799,6 +809,12 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
       results.success.push({ row: rowNum, email, name: user.student.name });
     } catch (err) { results.failed.push({ row: rowNum, email, reason: err.message }); }
   }
+
+  // % completion — used by the results panel so an admin can see progress
+  // at a glance without counting rows themselves.
+  results.percent_success = results.total ? Math.round((results.success.length / results.total) * 100) : 0;
+  results.percent_failed  = results.total ? Math.round((results.failed.length  / results.total) * 100) : 0;
+
   return results;
 };
 
@@ -1495,7 +1511,7 @@ export const getBulkSubmitTemplate = async (form_id) => {
     ["• Rating questions (RATING): enter 1-5"],
     ["• Text questions (TEXT): enter any text"],
     ["• MCQ questions: enter exact option text"],
-    ["• submitted_at: optional back-date, format YYYY-MM-DD (date only — no time needed). Leave blank for current date/time."],
+    ["• submitted_at: optional back-date — YYYY-MM-DD or DD-MM-YYYY (date only, no time needed). Leave blank for current date/time."],
     ["• Do NOT modify column headers"],
     ["• Root admin only — this is a privileged operation"],
   ];
