@@ -712,7 +712,10 @@ export const generateFeedbackTemplate = async (form_id) => {
 // ─── BULK SUBMIT — single form ────────────────────────────────
 // Captures full snapshot for every student — no FK for section/dept
 export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
-  const workbook = xlsx.read(buffer, { type: "buffer" });
+  // cellDates: true — without this, an Excel-formatted date cell comes back as a
+  // raw serial number (e.g. 46127) instead of a real date, which then silently
+  // fails to parse below and falls back to "now", swallowing the intended back-date.
+  const workbook = xlsx.read(buffer, { type: "buffer", cellDates: true });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
   if (!rows.length) throw Object.assign(new Error("File is empty"), { statusCode: 400 });
@@ -760,8 +763,17 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
       if (existing) { results.failed.push({ row: rowNum, email, reason: "Already submitted" }); continue; }
 
       let submittedAt = new Date();
-      if (row.submitted_at?.toString().trim()) {
-        const p = new Date(row.submitted_at); if (!isNaN(p)) submittedAt = p;
+      // Accept a real Date (now reliable thanks to cellDates: true above), a
+      // plain "YYYY-MM-DD" (date only — pinned to noon so it can't drift to the
+      // adjacent calendar day across timezones), or a full datetime string.
+      const rawDate = row.submitted_at;
+      if (rawDate instanceof Date && !isNaN(rawDate)) {
+        submittedAt = rawDate;
+      } else if (rawDate !== undefined && rawDate !== null && rawDate.toString().trim()) {
+        const s = rawDate.toString().trim();
+        const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
+        const p = new Date(dateOnly ? `${s}T12:00:00` : s);
+        if (!isNaN(p)) submittedAt = p;
       }
 
       const answers = [];
@@ -1466,11 +1478,11 @@ export const getBulkSubmitTemplate = async (form_id) => {
   const questions = form.category?.questions || [];
   const HEADERS   = [
     "student_email",
-    "submitted_at (optional, YYYY-MM-DD HH:MM:SS)",
+    "submitted_at",
     ...questions.map((q, i) => `Q${i+1}_${q.question.slice(0, 30).replace(/[^a-zA-Z0-9 ]/g, "")}`),
   ];
   const SAMPLE = [
-    "student@eit.edu", "",
+    "student@eit.edu", "2026-04-15",
     ...questions.map(q => q.type === "RATING" ? "5" : q.type === "MCQ" ? (q.options?.[0] || "Option1") : "Sample answer"),
   ];
 
@@ -1483,7 +1495,7 @@ export const getBulkSubmitTemplate = async (form_id) => {
     ["• Rating questions (RATING): enter 1-5"],
     ["• Text questions (TEXT): enter any text"],
     ["• MCQ questions: enter exact option text"],
-    ["• submitted_at: optional override date, leave blank for current time"],
+    ["• submitted_at: optional back-date, format YYYY-MM-DD (date only — no time needed). Leave blank for current date/time."],
     ["• Do NOT modify column headers"],
     ["• Root admin only — this is a privileged operation"],
   ];

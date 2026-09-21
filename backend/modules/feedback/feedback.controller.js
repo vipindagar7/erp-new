@@ -211,7 +211,11 @@ export async function submitFeedback(req, res) {
 
 export async function bulkSubmit(req, res) {
   try {
-    const result = await feedbackService.bulkSubmitFeedback(req.params.id, req.file?.buffer);
+    // BUG: was not passing req.user?.is_root through, so the service's
+    // `if (!isRoot)` window/active-form check always ran the strict path —
+    // even for root, meaning backdated or out-of-window submissions from the
+    // root-only bulk upload flow got rejected exactly like a regular user's would.
+    const result = await feedbackService.bulkSubmitFeedback(req.params.id, req.file?.buffer, !!req.user?.is_root);
     res.json({ success: true, data: result });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
