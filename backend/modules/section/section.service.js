@@ -357,6 +357,7 @@ export const updateSection = async (id, data, actingUser = {}) => {
 
   const newSemester = data.semester !== undefined ? parseInt(data.semester) : undefined;
   const semesterChanged = newSemester !== undefined && newSemester !== prev.semester;
+  const statusChanged = data.status !== undefined && data.status !== prev.status;
 
   const next = await prisma.section.update({
     where: { id },
@@ -415,12 +416,49 @@ export const updateSection = async (id, data, actingUser = {}) => {
     }
   }
 
+  // ── Section status → student status ─────────────────────────
+  // Section.status and Student.status are DIFFERENT enums — a section going
+  // INACTIVE/MERGED/ARCHIVED doesn't map onto any single student status, so we
+  // deliberately do NOT guess for those (silently mis-setting a student's status
+  // is worse than not cascading at all). Only the two unambiguous cases cascade:
+  //   section → ACTIVE               : students' own status is reset to ACTIVE
+  //   section → GRADUATED/COMPLETED  : students' own status becomes PASSED
+  // For DETAINED/ON_HOLD/LEFT/TRANSFERRED/SUSPENDED, use detainStudents() or the
+  // dedicated status-change flow instead — those already snapshot + audit-log
+  // per student, which a blind bulk cascade here would not.
+  const STATUS_CASCADE_MAP = { ACTIVE: "ACTIVE", GRADUATED: "PASSED", COMPLETED: "PASSED" };
+  let students_status_updated = 0;
+  if (statusChanged && STATUS_CASCADE_MAP[data.status]) {
+    const targetStudentStatus = STATUS_CASCADE_MAP[data.status];
+    const students = await prisma.student.findMany({
+      where: { section_id: id, deleted_at: null, status: { not: targetStudentStatus } },
+      select: { id: true, status: true },
+    });
+    if (students.length) {
+      const r = await prisma.student.updateMany({
+        where: { id: { in: students.map((s) => s.id) } },
+        data: { status: targetStudentStatus },
+      });
+      students_status_updated = r.count;
+      for (const s of students) {
+        await logEnrollmentHistory(s.id, {
+          action: "STATUS_CHANGE",
+          section_id: id,
+          from_status: s.status,
+          to_status: targetStudentStatus,
+          reason: data.reason || `Section status changed to ${data.status}`,
+          by: actingUser.id, byName: actingUser.email, byRole: actingUser.role,
+        });
+      }
+    }
+  }
+
   await logSectionHistory(id, sid, {
     action: "UPDATE", prev, next, reason: data.reason,
     by: actingUser.id, byName: actingUser.email, byRole: actingUser.role,
   });
 
-  return { ...next, students_updated };
+  return { ...next, students_updated, students_status_updated };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -433,6 +471,7 @@ export const bulkUpdateSections = async (section_ids, fields, actingUser = {}) =
   const results = {
     sections: { updated: [], failed: [], skipped: [] },
     students_updated: 0,
+    students_status_updated: 0,
     total_sections: section_ids.length,
   };
 
@@ -445,6 +484,7 @@ export const bulkUpdateSections = async (section_ids, fields, actingUser = {}) =
 
       const updated = await updateSection(section_id, { ...data, reason }, actingUser);
       results.students_updated += updated.students_updated || 0;
+      results.students_status_updated += updated.students_status_updated || 0;
       results.sections.updated.push({ id: section_id, name: exists.name, code: exists.code });
     } catch (err) {
       results.sections.failed.push({ id: section_id, reason: err.message });

@@ -29,10 +29,10 @@ function ResultPanel({ result, labels = {} }) {
   const [showOk, setShowOk] = useState(false);
   if (!result) return null;
 
-  const ok_ = result.sections?.promoted || result.sections?.demoted || result.created || result.updated || [];
+  const ok_ = result.sections?.promoted || result.sections?.demoted || result.sections?.updated || result.created || result.updated || [];
   const fail_ = result.sections?.failed || result.failed || [];
   const skip_ = result.sections?.skipped || result.skipped || [];
-  const stuUp = result.students?.promoted || result.students?.demoted || 0;
+  const stuUp = result.students?.promoted || result.students?.demoted || result.students_status_updated || result.students_updated || 0;
   const total = result.total_sections || result.total || (ok_.length + fail_.length + skip_.length);
 
   return (
@@ -316,7 +316,8 @@ export default function SectionBulkPromotePage() {
       });
       setEditResult(r.data?.data);
       const cnt = r.data?.data?.sections?.updated?.length || 0;
-      notify.success(`${cnt} section${cnt !== 1 ? "s" : ""} updated`);
+      const statusUpdated = r.data?.data?.students_status_updated || 0;
+      notify.success(`${cnt} section${cnt !== 1 ? "s" : ""} updated${statusUpdated > 0 ? ` — ${statusUpdated} student status(es) updated` : ""}`);
       setEditSelected(new Set());
       setEditFields({ batch: "", session_id: "", room_no: "", capacity: "", is_combined: "", status: "", description: "" });
     } catch (err) { notify.error(err); }
