@@ -85,7 +85,63 @@ const getStudentSnapshot = async (student_id) => {
   };
 };
 
-// ─── CATEGORY ────────────────────────────────────────────────
+// ── One-time backfill: re-stamp every EXISTING FeedbackResponse's snap_*
+// fields using the current (fixed) getStudentSnapshot() logic. The fix to
+// getStudentSnapshot() only changes what gets captured on new submissions —
+// it can't retroactively correct responses that were already submitted with
+// the old, inconsistent logic. This walks every response and re-derives its
+// snapshot from the student's CURRENT actual data, so old exports stop
+// showing stale/mismatched academic years, sections, etc. Note: this
+// deliberately overwrites the "what it looked like at submission time"
+// nature of a snapshot with "what's true right now" — that's the tradeoff
+// requested (same student data everywhere) vs. a point-in-time record.
+// dryRun=true (default) only reports; pass dryRun=false to commit.
+export const syncFeedbackSnapshots = async (dryRun = true) => {
+  const responses = await prisma.feedbackResponse.findMany({
+    select: {
+      id: true, student_id: true,
+      snap_section_name: true, snap_batch: true, snap_program_name: true,
+      snap_branch_name: true, snap_dept_name: true, snap_semester: true,
+      snap_academic_year: true,
+      student: { select: { name: true, roll_no: true } },
+    },
+  });
+
+  const report = { total_responses: responses.length, mismatched: [], fixed: 0, students_not_found: 0 };
+
+  for (const r of responses) {
+    const fresh = await getStudentSnapshot(r.student_id);
+    if (!fresh.snap_section_name && !fresh.snap_academic_year && !fresh.snap_dept_name) {
+      // Student record itself is gone/unreachable — nothing to sync against
+      report.students_not_found++;
+      continue;
+    }
+
+    const fields = ["snap_section_name", "snap_batch", "snap_program_name", "snap_branch_name", "snap_dept_name", "snap_semester", "snap_academic_year"];
+    const changed = {};
+    for (const f of fields) {
+      if ((r[f] ?? null) !== (fresh[f] ?? null)) changed[f] = { from: r[f] ?? null, to: fresh[f] ?? null };
+    }
+    if (!Object.keys(changed).length) continue;
+
+    report.mismatched.push({
+      response_id: r.id,
+      student_name: r.student?.name,
+      roll_no: r.student?.roll_no,
+      changed,
+    });
+
+    if (!dryRun) {
+      await prisma.feedbackResponse.update({ where: { id: r.id }, data: fresh });
+      report.fixed++;
+    }
+  }
+
+  report.dry_run = dryRun;
+  return report;
+};
+
+
 export const getAllCategories = async () =>
   prisma.feedbackCategory.findMany({
     orderBy: [{ is_active: "desc" }, { name: "asc" }],

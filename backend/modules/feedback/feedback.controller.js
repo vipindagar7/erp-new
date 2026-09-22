@@ -334,3 +334,16 @@ export async function getMyForms(req, res) {
     res.status(500).json({ success: false, message: err.message });
   }
 }
+
+// ── One-time backfill: re-stamp every existing response's snap_* fields ────
+// GET (no ?apply=true)  → dry run, just reports what's mismatched
+// GET ?apply=true       → actually commits the fix
+export async function syncSnapshots(req, res) {
+  try {
+    const apply = req.query.apply === "true" || req.query.apply === "1";
+    const data = await feedbackService.syncFeedbackSnapshots(!apply);
+    res.json({ success: true, message: apply ? "Sync applied" : "Dry run — pass ?apply=true to commit", data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+}

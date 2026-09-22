@@ -61,4 +61,7 @@ router.get(  "/teaching-report/export/:level/:id",        authenticate, authoriz
 // ── Student: my forms ─────────────────────────────────────────
 router.get(  "/my-forms",                authenticate, authorize(...ALL),   c.getMyForms);
 
+// ── Data-integrity backfill: re-sync every existing response's snapshot ────
+router.get(  "/sync-snapshots",          authenticate, rootOnly,            c.syncSnapshots);
+
 export default router;
