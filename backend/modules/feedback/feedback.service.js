@@ -773,9 +773,13 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
 
     try {
       const user = await prisma.user.findUnique({
-        where: { email }, include: { student: { select: { id: true, name: true } } },
+        where: { email }, include: { student: { select: { id: true, name: true, status: true } } },
       });
       if (!user?.student) { results.failed.push({ row: rowNum, email, reason: "Student not found" }); continue; }
+      if (user.student.status !== "ACTIVE") {
+        results.failed.push({ row: rowNum, email, reason: `Student status is ${user.student.status}, not ACTIVE — skipped` });
+        continue;
+      }
 
       const student_id = user.student.id;
       const existing = await prisma.feedbackResponse.findUnique({
@@ -1143,9 +1147,13 @@ export const bulkSubmitGroupResponses = async (groupId, buffer) => {
 
       const user = await prisma.user.findUnique({
         where: { email },
-        include: { student: { select: { id: true, name: true } } },
+        include: { student: { select: { id: true, name: true, status: true } } },
       });
       if (!user?.student) { results.failed.push({ sheet: sheetName, email, reason: "Student not found" }); continue; }
+      if (user.student.status !== "ACTIVE") {
+        results.failed.push({ sheet: sheetName, email, reason: `Student status is ${user.student.status}, not ACTIVE — skipped` });
+        continue;
+      }
 
       const student_id = user.student.id;
 
@@ -1514,6 +1522,7 @@ export const getBulkSubmitTemplate = async (form_id) => {
     ["• Text questions (TEXT): enter any text"],
     ["• MCQ questions: enter exact option text"],
     ["• submitted_at: optional back-date — YYYY-MM-DD or DD-MM-YYYY (date only, no time needed). Leave blank for current date/time."],
+    ["• Only ACTIVE students can be submitted for — other statuses (DETAINED, LEFT, etc.) will be skipped and listed in Failed"],
     ["• Do NOT modify column headers"],
     ["• Root admin only — this is a privileged operation"],
   ];
