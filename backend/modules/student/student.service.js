@@ -105,13 +105,23 @@ export const getAllStudents = async ({
   const programFilter = parseMulti(program_ids) || (program_id ? [program_id] : null);
   const batchFilter = parseMulti(batches); // exact section.batch values, e.g. "2022-2026,2023-2027"
 
-  // Multi-select session — comma-separated academicSession ids, resolved to codes/labels,
-  // matched against the student's current enrollment's academic_year (same convention as sections).
+  // Multi-select session — comma-separated academicSession ids, resolved to their
+  // label(s). Matched directly against Student.session (kept in sync with
+  // Section.academic_year by updateSection()/the sync-student-sessions backfill),
+  // NOT via the enrollment join. That join was silently dropping roughly half of
+  // matching students for two reasons: (1) `academic_year: { in: sessionLabels } }`
+  // only ever checked `code || name` from one session — but sessions have been
+  // created with inconsistent label formats across different code paths (e.g.
+  // "2025-26" from auto-created sessions during promote vs "2025-2026" from a
+  // manually seeded session), so students whose enrollment.academic_year used
+  // the other format never matched; (2) `is_current: true` additionally excluded
+  // any student whose matching enrollment wasn't their current one. Matching
+  // against Student.session directly, by BOTH code and name, sidesteps both.
   const sessionIdFilter = parseMulti(session_ids);
   let sessionLabels = null;
   if (sessionIdFilter?.length) {
     const sessRows = await prisma.academicSession.findMany({ where: { id: { in: sessionIdFilter } } });
-    sessionLabels = sessRows.map((s) => s.code || s.name).filter(Boolean);
+    sessionLabels = [...new Set(sessRows.flatMap((s) => [s.code, s.name].filter(Boolean)))];
   }
 
   const where = {
@@ -125,6 +135,8 @@ export const getAllStudents = async ({
     ...(is_hosteller !== undefined && { is_hosteller: is_hosteller === "true" || is_hosteller === true }),
     ...(is_using_transport !== undefined && { is_using_transport: is_using_transport === "true" || is_using_transport === true }),
     ...(isBlocked !== undefined && { user: { isBlocked: isBlocked === "true" || isBlocked === true } }),
+    // Direct field match — see the note above on why this replaced the enrollment join.
+    ...(sessionLabels?.length ? { session: { in: sessionLabels } } : (session ? { session } : {})),
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -135,12 +147,11 @@ export const getAllStudents = async ({
         { user: { email: { contains: search, mode: "insensitive" } } },
       ],
     }),
-    ...((academic_year || semester || session || status || sessionLabels?.length) ? {
+    ...((academic_year || semester || status) ? {
       enrollments: {
         some: {
-          ...(sessionLabels?.length ? { academic_year: { in: sessionLabels } } : (academic_year && { academic_year })),
+          ...(academic_year && { academic_year }),
           ...(semester && { semester: parseInt(semester) }),
-          ...(session && { session }),
           ...(status && { status }),
           is_current: true,
         },
