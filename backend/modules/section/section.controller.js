@@ -244,3 +244,13 @@ export const getBatches = async (req, res, next) => {
   try { ok(res, await svc.getDistinctBatches()); }
   catch(e) { fail(res,e,next); }
 };
+
+// ── One-time data-integrity backfill: Student.session ↔ Section.academic_year.
+// GET (no ?apply=true)  → dry run, just reports what's mismatched
+// GET ?apply=true       → actually commits the fix
+export const syncStudentSessions = async (req, res, next) => {
+  try {
+    const apply = req.query.apply === "true" || req.query.apply === "1";
+    ok(res, await svc.syncStudentSessionsWithSections(!apply), apply ? "Sync applied" : "Dry run — pass ?apply=true to commit");
+  } catch(e) { fail(res,e,next); }
+};

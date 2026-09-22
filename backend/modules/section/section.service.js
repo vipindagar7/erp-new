@@ -126,6 +126,54 @@ export const getDistinctBatches = async () => {
   return rows.map(r => r.batch).filter(Boolean);
 };
 
+// ── One-time data-integrity backfill: Student.session must always match its
+// Section.academic_year. Going forward updateSection() keeps them in sync on
+// every edit — this covers any pairs that were already out of sync in the DB
+// before that fix existed. dryRun=true (default) only reports; pass
+// dryRun=false to actually commit the fix.
+export const syncStudentSessionsWithSections = async (dryRun = true) => {
+  const sections = await prisma.section.findMany({
+    where: { deleted_at: null },
+    select: { id: true, code: true, name: true, academic_year: true },
+  });
+
+  const report = { sections_with_mismatches: [], students_fixed: 0, orphaned_session_count: 0 };
+
+  for (const section of sections) {
+    const mismatched = await prisma.student.findMany({
+      where: { section_id: section.id, deleted_at: null, session: { not: section.academic_year } },
+      select: { id: true, name: true, roll_no: true, session: true },
+    });
+    if (!mismatched.length) continue;
+
+    report.sections_with_mismatches.push({
+      section_id: section.id,
+      section_code: section.code,
+      section_name: section.name,
+      academic_year: section.academic_year,
+      students: mismatched.map(s => ({ id: s.id, name: s.name, roll_no: s.roll_no, was: s.session })),
+    });
+
+    if (!dryRun) {
+      const r = await prisma.student.updateMany({
+        where: { section_id: section.id, deleted_at: null, session: { not: section.academic_year } },
+        data: { session: section.academic_year },
+      });
+      report.students_fixed += r.count;
+    }
+  }
+
+  // Students with no section at all but a stale session value — flagged, not touched,
+  // since there's no section to sync them against.
+  report.orphaned_session_count = await prisma.student.count({
+    where: { section_id: null, deleted_at: null, session: { not: null } },
+  });
+
+  report.dry_run = dryRun;
+  report.total_students_would_fix = report.sections_with_mismatches.reduce((a, s) => a + s.students.length, 0);
+  return report;
+};
+
 
 // ── Assign subject to section ─────────────────────────────────
 export const assignSubjectToSection = async (section_id, data, actingUser = {}) => {
