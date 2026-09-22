@@ -74,7 +74,14 @@ const getStudentSnapshot = async (student_id) => {
                         ?? student?.section?.branch?.program?.name                  ?? null,
     snap_branch_name:   student?.branch?.name
                         ?? student?.section?.branch?.name                           ?? null,
-    snap_academic_year: enr?.academic_year ?? student?.section?.academic_year       ?? null,
+    // student.session is the authoritative field — kept in sync with
+    // Section.academic_year by updateSection()/the sync-student-sessions
+    // backfill. Prefer it over enrollment.academic_year (which can be written
+    // in a different label format across different code paths, e.g. "2025-26"
+    // vs "2025-2026" — the exact mismatch between the feedback export and the
+    // students export) and over section.academic_year (which can be stale on
+    // older sections that were never re-synced).
+    snap_academic_year: student?.session ?? enr?.academic_year ?? student?.section?.academic_year ?? null,
   };
 };
 
