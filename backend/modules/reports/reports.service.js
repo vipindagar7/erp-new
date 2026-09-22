@@ -153,7 +153,13 @@ const mapStudent = (s, i) => {
     branch: s.branch?.name || sec?.branch?.name || "",
     section: sec?.name || "",
     semester: sec?.semester || "",
-    ay: sec?.academic_year || "",
+    // student.session is the authoritative field — kept in sync with
+    // Section.academic_year by updateSection()/the sync-student-sessions
+    // backfill. sec?.academic_year can be stale on sections that predate that
+    // sync, or drift into a different label format ("2025-2026" vs "2025-26")
+    // — the exact mismatch found between the Students export and the
+    // Feedback export earlier. Prefer the student's own field.
+    ay: s.session || sec?.academic_year || "",
     batch: sec?.batch || "",
     batch_year: s.batch_year || "",
     status: s.status || "",
@@ -194,7 +200,11 @@ const mapStudent = (s, i) => {
   };
 };
 
-const STATUS_COLORS = { ACTIVE: "FF92D050", DETAINED: "FFFFC000", LEFT: "FFFF0000", SUSPENDED: "FFFF0000", PASSED: "FF00B0F0" };
+const STATUS_COLORS = {
+  ACTIVE: "FF92D050", DETAINED: "FFFFC000", LEFT: "FFFF0000", SUSPENDED: "FFFF0000",
+  PASSED: "FF00B0F0", ON_HOLD: "FFFFA500", TRANSFERRED: "FFBFBFBF",
+  INACTIVE: "FFBFBFBF", DISCONTINUED: "FFFF0000",
+};
 
 const buildStudentSheet = (wb, students, sheetName = "Students") => {
   const ws = wb.addWorksheet(sheetName);
