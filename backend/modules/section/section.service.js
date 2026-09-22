@@ -490,6 +490,7 @@ export const updateSection = async (id, data, actingUser = {}) => {
   // academic_year/semester; all reads (exports, reports, feedback snapshot,
   // search/filter) should read from there, not from any Student-level field.
   let students_updated = 0;
+  let students_session_updated = 0;
   if (semesterChanged || (resolvedAcademicYear && resolvedAcademicYear !== prev.academic_year)) {
     const r = await prisma.studentEnrollment.updateMany({
       where: { section_id: id, is_current: true },
@@ -500,6 +501,18 @@ export const updateSection = async (id, data, actingUser = {}) => {
       },
     });
     students_updated = r.count;
+
+    // Per your instruction — a session/academic_year change on the section
+    // updates BOTH the current StudentEnrollment record AND Student.session
+    // directly, for every student physically in this section (not just ones
+    // with a matching current enrollment — Student.section_id is the scope).
+    if (resolvedAcademicYear !== undefined && resolvedAcademicYear !== prev.academic_year) {
+      const sr = await prisma.student.updateMany({
+        where: { section_id: id, deleted_at: null },
+        data: { session: resolvedAcademicYear },
+      });
+      students_session_updated = sr.count;
+    }
 
     if (semesterChanged) {
       const students = await prisma.student.findMany({
@@ -579,7 +592,7 @@ export const updateSection = async (id, data, actingUser = {}) => {
     by: actingUser.id, byName: actingUser.email, byRole: actingUser.role,
   });
 
-  return { ...next, students_updated, students_status_updated };
+  return { ...next, students_updated, students_status_updated, students_session_updated };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -593,6 +606,7 @@ export const bulkUpdateSections = async (section_ids, fields, actingUser = {}) =
     sections: { updated: [], failed: [], skipped: [] },
     students_updated: 0,
     students_status_updated: 0,
+    students_session_updated: 0,
     total_sections: section_ids.length,
   };
 
@@ -606,6 +620,7 @@ export const bulkUpdateSections = async (section_ids, fields, actingUser = {}) =
       const updated = await updateSection(section_id, { ...data, reason }, actingUser);
       results.students_updated += updated.students_updated || 0;
       results.students_status_updated += updated.students_status_updated || 0;
+      results.students_session_updated += updated.students_session_updated || 0;
       results.sections.updated.push({ id: section_id, name: exists.name, code: exists.code });
     } catch (err) {
       results.sections.failed.push({ id: section_id, reason: err.message });

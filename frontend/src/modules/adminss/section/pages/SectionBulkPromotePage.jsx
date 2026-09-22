@@ -317,7 +317,11 @@ export default function SectionBulkPromotePage() {
       setEditResult(r.data?.data);
       const cnt = r.data?.data?.sections?.updated?.length || 0;
       const statusUpdated = r.data?.data?.students_status_updated || 0;
-      notify.success(`${cnt} section${cnt !== 1 ? "s" : ""} updated${statusUpdated > 0 ? ` — ${statusUpdated} student status(es) updated` : ""}`);
+      const sessionUpdated = r.data?.data?.students_session_updated || 0;
+      const extras = [];
+      if (sessionUpdated > 0) extras.push(`${sessionUpdated} student record(s) synced`);
+      if (statusUpdated > 0) extras.push(`${statusUpdated} student status(es) updated`);
+      notify.success(`${cnt} section${cnt !== 1 ? "s" : ""} updated${extras.length ? ` — ${extras.join(", ")}` : ""}`);
       setEditSelected(new Set());
       setEditFields({ batch: "", session_id: "", room_no: "", capacity: "", is_combined: "", status: "", description: "" });
     } catch (err) { notify.error(err); }

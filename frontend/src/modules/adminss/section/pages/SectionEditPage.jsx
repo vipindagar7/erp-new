@@ -78,7 +78,13 @@ export default function SectionEditPage() {
                 class_coordinator_id: form.class_coordinator_id || null,
             });
             const studentsUpdated = r.data?.data?.students_updated || 0;
-            notify.success(studentsUpdated > 0 ? `Section updated — ${studentsUpdated} student(s) synced` : "Section updated");
+            const statusUpdated = r.data?.data?.students_status_updated || 0;
+            const sessionUpdated = r.data?.data?.students_session_updated || 0;
+            const parts = [];
+            if (studentsUpdated > 0) parts.push(`${studentsUpdated} enrollment(s) synced`);
+            if (sessionUpdated > 0) parts.push(`${sessionUpdated} student record(s) synced`);
+            if (statusUpdated > 0) parts.push(`${statusUpdated} student status(es) updated`);
+            notify.success(parts.length ? `Section updated — ${parts.join(", ")}` : "Section updated");
             navigate(`/admin/sections/${id}`);
         } catch (err) { notify.error(err); }
         finally { setSaving(false); }
