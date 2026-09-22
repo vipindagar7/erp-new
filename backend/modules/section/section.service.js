@@ -158,9 +158,11 @@ export const syncStudentSessionsWithSections = async (dryRun = true) => {
   });
 
   const report = {
-    sections_with_bad_format: [],    // Section.academic_year itself normalized
-    enrollments_with_mismatches: [], // StudentEnrollment (is_current) synced to match
+    sections_with_bad_format: [],     // Section.academic_year itself normalized
+    drifted_enrollments: [],          // enrollment.section_id corrected to match Student.section_id
+    enrollments_with_mismatches: [],  // academic_year/semester synced to match
     sections_normalized: 0,
+    drift_fixed: 0,
     enrollments_fixed: 0,
     students_with_no_current_enrollment: 0,
   };
@@ -179,51 +181,74 @@ export const syncStudentSessionsWithSections = async (dryRun = true) => {
         await prisma.section.update({ where: { id: section.id }, data: { academic_year: normalized } });
         report.sections_normalized++;
       }
-      section.academic_year = normalized; // use the corrected value for step 2 below
+      section.academic_year = normalized; // use the corrected value below
     }
 
-    // Step 2 — sync every CURRENT enrollment in this section to match.
-    // StudentEnrollment (is_current: true) is the single source of truth —
-    // exports/reports/feedback/search all read from here, not Student.session.
-    const mismatched = await prisma.studentEnrollment.findMany({
-      where: {
-        section_id: section.id, is_current: true,
-        OR: [{ academic_year: { not: section.academic_year } }, { semester: { not: section.semester } }],
+    // Step 2 — find who's ACTUALLY in this section (Student.section_id — the
+    // field every other part of the app treats as the source of truth for
+    // "which section is this student in"), then look at THEIR current
+    // enrollment record — not the enrollment's own stored section_id, which
+    // can drift apart from Student.section_id and silently hide students
+    // from any query scoped by studentEnrollment.section_id.
+    const studentsInSection = await prisma.student.findMany({
+      where: { section_id: section.id, deleted_at: null },
+      select: {
+        id: true, name: true, roll_no: true,
+        enrollments: { where: { is_current: true }, select: { id: true, section_id: true, academic_year: true, semester: true } },
       },
-      select: { id: true, student_id: true, academic_year: true, semester: true, student: { select: { name: true, roll_no: true } } },
-    });
-    if (!mismatched.length) continue;
-
-    report.enrollments_with_mismatches.push({
-      section_id: section.id,
-      section_code: section.code,
-      section_name: section.name,
-      academic_year: section.academic_year,
-      semester: section.semester,
-      students: mismatched.map(e => ({
-        student_id: e.student_id, name: e.student?.name, roll_no: e.student?.roll_no,
-        was_academic_year: e.academic_year, was_semester: e.semester,
-      })),
     });
 
-    if (!dryRun) {
-      const r = await prisma.studentEnrollment.updateMany({
-        where: { id: { in: mismatched.map(e => e.id) } },
-        data: { academic_year: section.academic_year, semester: section.semester },
+    const driftedHere = [];
+    const mismatchedHere = [];
+    for (const s of studentsInSection) {
+      const enr = s.enrollments?.[0];
+      if (!enr) continue; // no current enrollment at all — counted separately below
+      if (enr.section_id !== section.id) {
+        driftedHere.push({ enrollment_id: enr.id, student_id: s.id, name: s.name, roll_no: s.roll_no, enrollment_was_pointing_at: enr.section_id });
+      }
+      if (enr.academic_year !== section.academic_year || enr.semester !== section.semester) {
+        mismatchedHere.push({ enrollment_id: enr.id, student_id: s.id, name: s.name, roll_no: s.roll_no, was_academic_year: enr.academic_year, was_semester: enr.semester });
+      }
+    }
+
+    if (driftedHere.length) {
+      report.drifted_enrollments.push({ section_id: section.id, section_code: section.code, section_name: section.name, students: driftedHere });
+      if (!dryRun) {
+        const r = await prisma.studentEnrollment.updateMany({
+          where: { id: { in: driftedHere.map((d) => d.enrollment_id) } },
+          data: { section_id: section.id },
+        });
+        report.drift_fixed += r.count;
+      }
+    }
+
+    if (mismatchedHere.length) {
+      report.enrollments_with_mismatches.push({
+        section_id: section.id, section_code: section.code, section_name: section.name,
+        academic_year: section.academic_year, semester: section.semester,
+        students: mismatchedHere,
       });
-      report.enrollments_fixed += r.count;
+      if (!dryRun) {
+        const r = await prisma.studentEnrollment.updateMany({
+          where: { id: { in: mismatchedHere.map((m) => m.enrollment_id) } },
+          data: { academic_year: section.academic_year, semester: section.semester },
+        });
+        report.enrollments_fixed += r.count;
+      }
     }
   }
 
-  // Students with a section assigned but NO current enrollment record at all —
-  // flagged, not touched, since there's nothing to sync; this itself points at
-  // a separate data-integrity gap (section_id and enrollment.section_id drift)
-  // worth investigating if the count isn't zero.
+  // Students with a section assigned but NO current enrollment record at
+  // all — flagged, not touched, since there's nothing to point at a section.
+  // This is a distinct problem from drift (which this backfill now fixes):
+  // drift means the enrollment exists but points at the wrong section; this
+  // means there's no is_current enrollment row whatsoever.
   report.students_with_no_current_enrollment = await prisma.student.count({
     where: { section_id: { not: null }, deleted_at: null, enrollments: { none: { is_current: true } } },
   });
 
   report.dry_run = dryRun;
+  report.total_drift_found = report.drifted_enrollments.reduce((a, s) => a + s.students.length, 0);
   report.total_enrollments_would_fix = report.enrollments_with_mismatches.reduce((a, s) => a + s.students.length, 0);
   return report;
 };
@@ -457,7 +482,6 @@ export const updateSection = async (id, data, actingUser = {}) => {
     resolvedAcademicYear = sess.code || sess.name || resolvedAcademicYear;
   }
   resolvedAcademicYear = normalizeAcademicYear(resolvedAcademicYear);
-  console.log("[DEBUG updateSection]", { section_id: id, data_session_id: data.session_id, data_academic_year: data.academic_year, resolvedAcademicYear, prev_academic_year: prev.academic_year });
 
   const newSemester = data.semester !== undefined ? parseInt(data.semester) : undefined;
   const semesterChanged = newSemester !== undefined && newSemester !== prev.semester;
@@ -493,16 +517,32 @@ export const updateSection = async (id, data, actingUser = {}) => {
   let students_updated = 0;
   let students_session_updated = 0;
   if (semesterChanged || (resolvedAcademicYear && resolvedAcademicYear !== prev.academic_year)) {
-    const r = await prisma.studentEnrollment.updateMany({
-      where: { section_id: id, is_current: true },
-      data: {
-        ...(newSemester !== undefined && { semester: newSemester }),
-        ...(resolvedAcademicYear !== undefined && { academic_year: resolvedAcademicYear }),
-        ...(resolvedSessionId && { session_id: resolvedSessionId }),
-      },
+    // Scope by Student.section_id (who's ACTUALLY in this section right now),
+    // not StudentEnrollment.section_id. Those two can drift apart — a student
+    // moved between sections some other way (manual DB edit, a path that only
+    // updated Student.section_id, etc.) leaves their enrollment record's own
+    // section_id pointing at the OLD section, so filtering by
+    // `studentEnrollment.section_id = id` silently missed them entirely, even
+    // though they show up as being in this section everywhere else in the app.
+    const studentsInSection = await prisma.student.findMany({
+      where: { section_id: id, deleted_at: null },
+      select: { id: true },
     });
+    const studentIds = studentsInSection.map((s) => s.id);
+
+    let r = { count: 0 };
+    if (studentIds.length) {
+      r = await prisma.studentEnrollment.updateMany({
+        where: { student_id: { in: studentIds }, is_current: true },
+        data: {
+          ...(newSemester !== undefined && { semester: newSemester }),
+          ...(resolvedAcademicYear !== undefined && { academic_year: resolvedAcademicYear }),
+          ...(resolvedSessionId && { session_id: resolvedSessionId }),
+          section_id: id, // also self-heal the drift: enrollment.section_id now matches Student.section_id
+        },
+      });
+    }
     students_updated = r.count;
-    console.log("[DEBUG updateSection] enrollment cascade RAN, count=", r.count);
 
     // Per your instruction — a session/academic_year change on the section
     // updates BOTH the current StudentEnrollment record AND Student.session
@@ -535,7 +575,6 @@ export const updateSection = async (id, data, actingUser = {}) => {
       }
     }
   } else {
-    console.log("[DEBUG updateSection] cascade SKIPPED — condition was false", { semesterChanged, resolvedAcademicYear, prev_academic_year: prev.academic_year });
   }
 
   // ── Section status → student status ─────────────────────────
