@@ -396,6 +396,17 @@ export const updateSection = async (id, data, actingUser = {}) => {
     });
     students_updated = r.count;
 
+    // Student.session is a separate direct field on the Student model (not just
+    // the enrollment's academic_year) — used by the student export/list. It was
+    // never being touched here, so a section's session change wouldn't show up
+    // on the student's own record even though the enrollment was correct.
+    if (resolvedAcademicYear !== undefined && resolvedAcademicYear !== prev.academic_year) {
+      await prisma.student.updateMany({
+        where: { section_id: id, deleted_at: null },
+        data: { session: resolvedAcademicYear },
+      });
+    }
+
     if (semesterChanged) {
       const students = await prisma.student.findMany({
         where: { section_id: id, deleted_at: null },
