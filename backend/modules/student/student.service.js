@@ -118,17 +118,12 @@ export const getAllStudents = async ({
   const batchFilter = parseMulti(batches); // exact section.batch values, e.g. "2022-2026,2023-2027"
 
   // Multi-select session — comma-separated academicSession ids, resolved to their
-  // label(s). Matched directly against Student.session (kept in sync with
-  // Section.academic_year by updateSection()/the sync-student-sessions backfill),
-  // NOT via the enrollment join. That join was silently dropping roughly half of
-  // matching students for two reasons: (1) `academic_year: { in: sessionLabels } }`
-  // only ever checked `code || name` from one session — but sessions have been
-  // created with inconsistent label formats across different code paths (e.g.
-  // "2025-26" from auto-created sessions during promote vs "2025-2026" from a
-  // manually seeded session), so students whose enrollment.academic_year used
-  // the other format never matched; (2) `is_current: true` additionally excluded
-  // any student whose matching enrollment wasn't their current one. Matching
-  // against Student.session directly, by BOTH code and name, sidesteps both.
+  // label(s), matched against the student's CURRENT StudentEnrollment record
+  // (is_current: true) — the single source of truth per decision, not any
+  // Student-level field. Checking both code and name (and both normalized and
+  // raw forms) guards against any AcademicSession rows that still have
+  // inconsistent label formats even after normalizeAcademicYear() went in at
+  // every write point.
   const sessionIdFilter = parseMulti(session_ids);
   let sessionLabels = null;
   if (sessionIdFilter?.length) {
@@ -147,8 +142,6 @@ export const getAllStudents = async ({
     ...(is_hosteller !== undefined && { is_hosteller: is_hosteller === "true" || is_hosteller === true }),
     ...(is_using_transport !== undefined && { is_using_transport: is_using_transport === "true" || is_using_transport === true }),
     ...(isBlocked !== undefined && { user: { isBlocked: isBlocked === "true" || isBlocked === true } }),
-    // Direct field match — see the note above on why this replaced the enrollment join.
-    ...(sessionLabels?.length ? { session: { in: sessionLabels } } : (session ? { session } : {})),
     ...(search && {
       OR: [
         { name: { contains: search, mode: "insensitive" } },
@@ -159,10 +152,17 @@ export const getAllStudents = async ({
         { user: { email: { contains: search, mode: "insensitive" } } },
       ],
     }),
-    ...((academic_year || semester || status) ? {
+    // StudentEnrollment (is_current: true) is the single source of truth for
+    // academic_year/semester/status/session — all folded into one join here.
+    // NOTE: the singular `session` param is intentionally NOT used as a raw
+    // string filter — on StudentEnrollment, `session` is a relation field (to
+    // AcademicSession), not a string column, so `{ session: "someString" }`
+    // was invalid Prisma usage before this. Use `session_ids` (resolved above)
+    // for session filtering instead.
+    ...((academic_year || semester || status || sessionLabels?.length) ? {
       enrollments: {
         some: {
-          ...(academic_year && { academic_year }),
+          ...(sessionLabels?.length ? { academic_year: { in: sessionLabels } } : (academic_year && { academic_year })),
           ...(semester && { semester: parseInt(semester) }),
           ...(status && { status }),
           is_current: true,

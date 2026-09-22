@@ -74,14 +74,13 @@ const getStudentSnapshot = async (student_id) => {
                         ?? student?.section?.branch?.program?.name                  ?? null,
     snap_branch_name:   student?.branch?.name
                         ?? student?.section?.branch?.name                           ?? null,
-    // student.session is the authoritative field — kept in sync with
-    // Section.academic_year by updateSection()/the sync-student-sessions
-    // backfill. Prefer it over enrollment.academic_year (which can be written
-    // in a different label format across different code paths, e.g. "2025-26"
-    // vs "2025-2026" — the exact mismatch between the feedback export and the
-    // students export) and over section.academic_year (which can be stale on
-    // older sections that were never re-synced).
-    snap_academic_year: student?.session ?? enr?.academic_year ?? student?.section?.academic_year ?? null,
+    // StudentEnrollment (is_current: true) is the single source of truth per
+    // decision — prefer its academic_year first. Section.academic_year is
+    // only a fallback for a student with no current enrollment record (which
+    // report.students_with_no_current_enrollment, from the sync endpoint,
+    // helps identify — that's a data gap worth fixing at the source rather
+    // than relying on this fallback long-term).
+    snap_academic_year: enr?.academic_year ?? student?.section?.academic_year ?? null,
   };
 };
 

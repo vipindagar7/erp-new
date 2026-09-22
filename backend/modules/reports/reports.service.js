@@ -136,6 +136,7 @@ const STUDENT_COLS = [
 
 const mapStudent = (s, i) => {
   const sec = s.section;
+  const enr = s.enrollments?.[0];
   return {
     idx: i + 1,
     name: s.name || "",
@@ -152,14 +153,13 @@ const mapStudent = (s, i) => {
     program: s.program?.name || sec?.branch?.program?.name || "",
     branch: s.branch?.name || sec?.branch?.name || "",
     section: sec?.name || "",
-    semester: sec?.semester || "",
-    // student.session is the authoritative field — kept in sync with
-    // Section.academic_year by updateSection()/the sync-student-sessions
-    // backfill. sec?.academic_year can be stale on sections that predate that
-    // sync, or drift into a different label format ("2025-2026" vs "2025-26")
-    // — the exact mismatch found between the Students export and the
-    // Feedback export earlier. Prefer the student's own field.
-    ay: s.session || sec?.academic_year || "",
+    semester: enr?.semester ?? sec?.semester ?? "",
+    // StudentEnrollment (is_current: true) is the single source of truth —
+    // prefer it over sec?.academic_year, which can be stale on sections that
+    // predate a sync, or in a different label format ("2025-2026" vs
+    // "2025-26") — the exact mismatch found between the Students export and
+    // the Feedback export earlier.
+    ay: enr?.academic_year || sec?.academic_year || "",
     batch: sec?.batch || "",
     batch_year: s.batch_year || "",
     status: s.status || "",
@@ -230,6 +230,15 @@ const studentInclude = {
       name: true, semester: true, academic_year: true, batch: true, batch_year: true,
       branch: { select: { name: true, program: { select: { name: true, department: { select: { name: true } } } } } }
     }
+  },
+  // StudentEnrollment (is_current: true) is the single source of truth for
+  // academic_year/semester — reports read from here now, not Student.session
+  // or Section fields directly (those can be stale/differently-formatted).
+  enrollments: {
+    where: { is_current: true },
+    select: { academic_year: true, semester: true },
+    orderBy: { enrolled_at: "desc" },
+    take: 1,
   },
 };
 
