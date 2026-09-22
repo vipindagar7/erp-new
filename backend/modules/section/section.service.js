@@ -457,6 +457,7 @@ export const updateSection = async (id, data, actingUser = {}) => {
     resolvedAcademicYear = sess.code || sess.name || resolvedAcademicYear;
   }
   resolvedAcademicYear = normalizeAcademicYear(resolvedAcademicYear);
+  console.log("[DEBUG updateSection]", { section_id: id, data_session_id: data.session_id, data_academic_year: data.academic_year, resolvedAcademicYear, prev_academic_year: prev.academic_year });
 
   const newSemester = data.semester !== undefined ? parseInt(data.semester) : undefined;
   const semesterChanged = newSemester !== undefined && newSemester !== prev.semester;
@@ -501,6 +502,7 @@ export const updateSection = async (id, data, actingUser = {}) => {
       },
     });
     students_updated = r.count;
+    console.log("[DEBUG updateSection] enrollment cascade RAN, count=", r.count);
 
     // Per your instruction — a session/academic_year change on the section
     // updates BOTH the current StudentEnrollment record AND Student.session
@@ -532,6 +534,8 @@ export const updateSection = async (id, data, actingUser = {}) => {
         });
       }
     }
+  } else {
+    console.log("[DEBUG updateSection] cascade SKIPPED — condition was false", { semesterChanged, resolvedAcademicYear, prev_academic_year: prev.academic_year });
   }
 
   // ── Section status → student status ─────────────────────────
