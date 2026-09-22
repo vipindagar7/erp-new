@@ -4,6 +4,18 @@ const masterClient = prisma;
 const replicaClient = prisma;
 import bcrypt from "bcryptjs";
 
+// Duplicated from section.service.js (not imported, to avoid a circular
+// import — section.service.js already imports from this file). Keep both
+// copies identical if the canonical format ever changes.
+const normalizeAcademicYear = (label) => {
+  if (!label) return label;
+  const s = String(label).trim();
+  let m = s.match(/^(\d{4})-(\d{4})$/);
+  if (m) return `${m[1]}-${m[2].slice(-2)}`;
+  if (/^\d{4}-\d{2}$/.test(s)) return s;
+  return s;
+};
+
 // ── Shared include ────────────────────────────────────────────────────────────
 const studentInclude = {
   user: { select: { id: true, email: true, role: true, isBlocked: true } },
@@ -121,7 +133,7 @@ export const getAllStudents = async ({
   let sessionLabels = null;
   if (sessionIdFilter?.length) {
     const sessRows = await prisma.academicSession.findMany({ where: { id: { in: sessionIdFilter } } });
-    sessionLabels = [...new Set(sessRows.flatMap((s) => [s.code, s.name].filter(Boolean)))];
+    sessionLabels = [...new Set(sessRows.flatMap((s) => [normalizeAcademicYear(s.code), normalizeAcademicYear(s.name), s.code, s.name].filter(Boolean)))];
   }
 
   const where = {

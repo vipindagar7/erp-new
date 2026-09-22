@@ -2,6 +2,26 @@
 // Handles: promote, demote, FYE split, snapshot, rollback
 import prisma from "../../utils/prisma.js";
 
+// ── Canonical academic-year/session label format: "YYYY-YY" (e.g. "2025-26") ──
+// Multiple code paths across this file (manual section create/edit, the
+// promote/demote auto-generated labels, admin-typed values, bulk-upload cells)
+// have historically produced DIFFERENT formats for the same real session —
+// "2025-2026" vs "2025-26" being the most common — which is exactly what
+// caused the Students export and Feedback export to disagree on the same
+// student. This normalizes any input to the one canonical form; call it at
+// every point an academic_year/session label gets written.
+export const normalizeAcademicYear = (label) => {
+  if (!label) return label;
+  const s = String(label).trim();
+  // "2025-2026" → "2025-26"
+  let m = s.match(/^(\d{4})-(\d{4})$/);
+  if (m) return `${m[1]}-${m[2].slice(-2)}`;
+  // already canonical "2025-26"
+  if (/^\d{4}-\d{2}$/.test(s)) return s;
+  // anything else (unrecognized format) — leave as-is rather than guess
+  return s;
+};
+
 // ── Section label formatter (used in all templates) ──────────
 // Format: "Program Name > Branch Name > Section Name (Sem X)"
 const fmtSection = (s) => {
@@ -94,7 +114,7 @@ export const getAllSections = async ({
   let _academicYear = academic_year;
   if (sessionIdList?.length) {
     const sessRows = await prisma.academicSession.findMany({ where: { id: { in: sessionIdList } } });
-    const labels = sessRows.map(s => s.code || s.name).filter(Boolean);
+    const labels = [...new Set(sessRows.flatMap(s => [normalizeAcademicYear(s.code), normalizeAcademicYear(s.name), s.code, s.name].filter(Boolean)))];
     if (labels.length) where.academic_year = { in: labels };
   } else if (session_id) {
     const sess = await prisma.academicSession.findUnique({ where: { id: session_id } });
@@ -137,9 +157,32 @@ export const syncStudentSessionsWithSections = async (dryRun = true) => {
     select: { id: true, code: true, name: true, academic_year: true },
   });
 
-  const report = { sections_with_mismatches: [], students_fixed: 0, orphaned_session_count: 0 };
+  const report = {
+    sections_with_bad_format: [],   // Section.academic_year itself normalized
+    sections_with_mismatches: [],   // Student.session synced to match
+    sections_normalized: 0,
+    students_fixed: 0,
+    orphaned_session_count: 0,
+  };
 
   for (const section of sections) {
+    // Step 1 — normalize the SECTION's own academic_year first. Without this,
+    // syncing students would just propagate whatever format the section
+    // happens to already be in — garbage in, garbage out.
+    const normalized = normalizeAcademicYear(section.academic_year);
+    if (normalized !== section.academic_year) {
+      report.sections_with_bad_format.push({
+        section_id: section.id, section_code: section.code, section_name: section.name,
+        was: section.academic_year, now: normalized,
+      });
+      if (!dryRun) {
+        await prisma.section.update({ where: { id: section.id }, data: { academic_year: normalized } });
+        report.sections_normalized++;
+      }
+      section.academic_year = normalized; // use the corrected value for step 2 below
+    }
+
+    // Step 2 — sync every student in this section to match.
     const mismatched = await prisma.student.findMany({
       where: { section_id: section.id, deleted_at: null, session: { not: section.academic_year } },
       select: { id: true, name: true, roll_no: true, session: true },
@@ -369,7 +412,7 @@ export const createSection = async (data, actingUser = {}) => {
       semester: parseInt(semester),
       batch: batch.trim(),
       batch_year: parseInt(batch.slice(0, 4)) || null,
-      academic_year: academic_year || null,
+      academic_year: normalizeAcademicYear(academic_year) || null,
       is_combined,
       class_coordinator_id: class_coordinator_id || null,
       room_no: room_no || null,
@@ -402,6 +445,7 @@ export const updateSection = async (id, data, actingUser = {}) => {
     if (!sess) throw Object.assign(new Error("Selected session not found"), { status: 400 });
     resolvedAcademicYear = sess.code || sess.name || resolvedAcademicYear;
   }
+  resolvedAcademicYear = normalizeAcademicYear(resolvedAcademicYear);
 
   const newSemester = data.semester !== undefined ? parseInt(data.semester) : undefined;
   const semesterChanged = newSemester !== undefined && newSemester !== prev.semester;
@@ -571,6 +615,7 @@ export const promoteSection = async (section_id, {
 
   const currentSid = to_session_id || await getCurrentSessionId();
   const newSemester = section.semester + 1;
+  new_academic_year = normalizeAcademicYear(new_academic_year);
 
   // 1. SNAPSHOT — full backup before change
   const snapshot = await createSectionSnapshot(section_id, "PROMOTE", actingUser, reason);
@@ -887,7 +932,7 @@ export const promoteStudent = async (student_id, to_section_id, reason, actingUs
       session_id: sid,
       student_id,
       section_id: to_section_id,
-      academic_year: toSection.academic_year || "",
+      academic_year: normalizeAcademicYear(toSection.academic_year) || "",
       semester: toSection.semester,
       batch_year: toSection.batch_year || 0,
       dept_id: toSection.branch.program.dept_id,
@@ -1112,7 +1157,7 @@ export const bulkCreateSections = async (buffer, actingUser = {}) => {
     const branchCode = String(row["branch_code*"] || "").trim().toUpperCase();
     const semester = parseInt(row["semester* (1-8)"] || 0);
     const batch = String(row["batch* (e.g. 2024-2028)"] || "").trim();
-    const acYear = String(row["academic_year (e.g. 2024-25)"] || "").trim() || null;
+    const acYear = normalizeAcademicYear(String(row["academic_year (e.g. 2024-25)"] || "").trim()) || null;
     const roomNo = String(row.room_no || "").trim() || null;
     const capacity = row.capacity ? parseInt(row.capacity) : null;
     const empId = String(row.class_coordinator_emp_id || "").trim().toUpperCase() || null;
@@ -1197,6 +1242,7 @@ const prevSessionLabel = (label) => {
 
 // ── Get session by label (creates if not exists for promote) ─
 const getOrCreateSession = async (label) => {
+  label = normalizeAcademicYear(label);
   if (!label) return null;
   let s = await prisma.academicSession.findFirst({ where: { code: label } });
   if (s) return s.id;
@@ -1247,11 +1293,11 @@ export const bulkPromoteSections = async (section_ids, reason, actingUser = {}, 
       const currentSem = section.semester;
       const newSem = currentSem + 1;
       const currentSession = await prisma.academicSession.findFirst({ where: { is_current: true } });
-      const currentLabel = currentSession?.code || section.academic_year;
+      const currentLabel = normalizeAcademicYear(currentSession?.code || section.academic_year);
 
       // Determine new session — explicit dropdown selection wins, otherwise auto-detect
       const sessionChanges = overrideSession ? overrideSession.id !== currentSession?.id : sessionChangesOnPromote(currentSem);
-      const newSessionLabel = overrideSession ? (overrideSession.code || overrideSession.name) : (sessionChanges ? nextSessionLabel(currentLabel) : currentLabel);
+      const newSessionLabel = normalizeAcademicYear(overrideSession ? (overrideSession.code || overrideSession.name) : (sessionChanges ? nextSessionLabel(currentLabel) : currentLabel));
       const newSessionId = overrideSession
         ? overrideSession.id
         : (sessionChanges ? await getOrCreateSession(newSessionLabel) : (currentSession?.id || null));
@@ -1386,9 +1432,9 @@ export const bulkDemoteSections = async (section_ids, reason, actingUser = {}, t
       const currentSem = section.semester;
       const newSem = currentSem - 1;
       const currentSession = await prisma.academicSession.findFirst({ where: { is_current: true } });
-      const currentLabel = currentSession?.code || section.academic_year;
+      const currentLabel = normalizeAcademicYear(currentSession?.code || section.academic_year);
       const sessionChanges = overrideSession ? overrideSession.id !== currentSession?.id : sessionChangesOnDemote(currentSem);
-      const newSessionLabel = overrideSession ? (overrideSession.code || overrideSession.name) : (sessionChanges ? prevSessionLabel(currentLabel) : currentLabel);
+      const newSessionLabel = normalizeAcademicYear(overrideSession ? (overrideSession.code || overrideSession.name) : (sessionChanges ? prevSessionLabel(currentLabel) : currentLabel));
 
       const snapshot = await createSectionSnapshot(section_id, "DEMOTE", actingUser, reason);
 
