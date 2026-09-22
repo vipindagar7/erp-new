@@ -716,7 +716,7 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
   // raw serial number (e.g. 46127) instead of a real date, which then silently
   // fails to parse below and falls back to "now", swallowing the intended back-date.
   const workbook = xlsx.read(buffer, { type: "buffer", cellDates: true });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const sheet = workbook.Sheets["Data"] || workbook.Sheets[workbook.SheetNames[0]];
   const rows = xlsx.utils.sheet_to_json(sheet, { defval: "" });
   if (!rows.length) throw Object.assign(new Error("File is empty"), { statusCode: 400 });
 
@@ -783,7 +783,9 @@ export const bulkSubmitFeedback = async (form_id, buffer, isRoot = false) => {
       });
       if (existing) { results.failed.push({ row: rowNum, email, reason: "Already submitted" }); continue; }
 
-      const parsedDate = parseSubmittedDate(row.submitted_at);
+      const parsedDate = parseSubmittedDate(
+        row.submitted_at ?? Object.entries(row).find(([k]) => k.toLowerCase().replace(/\s+/g, "").startsWith("submitted_at"))?.[1]
+      );
       const submittedAt = parsedDate || new Date();
 
       const answers = [];
